@@ -1,0 +1,25 @@
+pkgname=filelessd
+pkgver=0.1.0
+pkgrel=1
+pkgdesc='Local eBPF fileless malware detector and GNOME/KDE alert indicator'
+arch=('x86_64')
+url='https://example.invalid/filelessd'
+license=('custom:LicenseRef-Not-Specified')
+depends=('libbpf' 'glib2' 'json-c' 'sqlite' 'gtk3' 'libayatana-appindicator' 'libnotify')
+makedepends=('meson' 'ninja' 'clang' 'bpftool')
+optdepends=('gnome-shell-extension-appindicator: GNOME panel icon support; KDE Plasma supports it natively')
+source=("$pkgname-$pkgver.tar.gz")
+sha256sums=('SKIP')
+
+build() {
+  arch-meson "$pkgname-$pkgver" build -Dintegration_tests=false
+  meson compile -C build
+}
+
+check() {
+  meson test -C build --no-suite privileged --print-errorlogs
+}
+
+package() {
+  meson install -C build --destdir "$pkgdir"
+}

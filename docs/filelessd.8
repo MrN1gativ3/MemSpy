@@ -1,0 +1,46 @@
+.TH FILELESSD 8 "October 2026" "fileless-detector 0.1.0" "System Administration"
+.SH NAME
+filelessd \- detect high-confidence fileless malware behavior with eBPF
+.SH SYNOPSIS
+.B filelessd
+.RI [ options ]
+.SH DESCRIPTION
+.B filelessd
+loads observational eBPF probes, evaluates local detection rules, retains alerts for 30 days, and exposes a read-only Unix socket API. It does not block, kill, quarantine, inspect payload memory, or open a network listener.
+.SH OPTIONS
+.TP
+.BI --config " PATH"
+Use an exact-path allowlist other than /etc/filelessd/allowlist.conf.
+.TP
+.BI --database " PATH"
+Use an alert database other than /var/lib/filelessd/alerts.db.
+.TP
+.BI --socket " PATH"
+Use a Unix socket other than /run/filelessd/filelessd.sock.
+.TP
+.B --foreground
+Run in the foreground. This is the packaged default.
+.TP
+.B --version
+Print the version.
+.TP
+.B --help
+Print command help.
+.SH FILES
+.TP
+.I /etc/filelessd/allowlist.conf
+One exact rule ID and absolute executable path per line.
+.TP
+.I /var/lib/filelessd/alerts.db
+Root-owned SQLite alert history, mode 0600.
+.TP
+.I /run/filelessd/filelessd.sock
+Local read-only API, mode 0660 and group filelessd-ui.
+.SH STORAGE FAILURE
+If the SQLite database cannot open, the service preserves it, continues bounded live detection in degraded health, and retries storage every 60 seconds.
+.SH SECURITY
+The service requires x86_64 Linux 5.4 or newer and readable kernel BTF at /sys/kernel/btf/vmlinux. Add only trusted desktop users to filelessd-ui. Membership permits reading alert metadata from all monitored users.
+.SH SEE ALSO
+.BR fileless-ui (1),
+.BR systemctl (1),
+.BR journalctl (1)

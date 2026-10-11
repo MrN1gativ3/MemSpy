@@ -1,0 +1,379 @@
+#include <gtk/gtk.h>
+#include <signal.h>
+#include <string.h>
+
+#include "client.h"
+#include "indicator.h"
+#include "notifications.h"
+#include "state.h"
+#include "window.h"
+
+#define FILELESS_UI_VERSION "0.1.0"
+#define FILELESS_SOCKET_PATH "/run/filelessd/filelessd.sock"
+#define FL_UI_MAX_HISTORY 10000U
+
+struct ui_app {
+    GtkApplication *application;
+    struct fl_window *window;
+    struct fl_indicator *indicator;
+    struct fl_ui_state state;
+    struct fl_alert latest;
+    bool have_latest;
+    bool background;
+    gint stopping;
+    bool notifications_ready;
+    char *state_path;
+    GThread *connection_thread;
+    GMutex mutex;
+    GCond wake;
+    struct fl_client *client;
+    int64_t known_id;
+};
+
+struct snapshot {
+    struct ui_app *ui;
+    struct fl_health health;
+    GArray *alerts;
+};
+
+struct alert_event {
+    struct ui_app *ui;
+    struct fl_alert alert;
+};
+
+struct health_event {
+    struct ui_app *ui;
+    struct fl_health health;
+};
+
+static void
+save_state(struct ui_app *ui)
+{
+    struct fl_error error = {0};
+    if (!fl_ui_state_save(&ui->state, ui->state_path, &error))
+        g_warning("cannot save UI state: %s", error.message);
+}
+
+static void
+update_indicator(struct ui_app *ui)
+{
+    if (ui->indicator != NULL)
+        fl_indicator_update(ui->indicator, fl_ui_state_indicator(&ui->state),
+                            ui->have_latest ? &ui->latest : NULL);
+}
+
+static void
+open_window(void *userdata)
+{
+    struct ui_app *ui = userdata;
+    fl_window_present(ui->window);
+    fl_ui_state_mark_visible_read(&ui->state);
+    save_state(ui);
+    update_indicator(ui);
+}
+
+static void
+quit_ui(void *userdata)
+{
+    struct ui_app *ui = userdata;
+    g_application_quit(G_APPLICATION(ui->application));
+}
+
+static void
+open_alert(int64_t alert_id, void *userdata)
+{
+    struct ui_app *ui = userdata;
+    open_window(ui);
+    fl_window_select_alert(ui->window, alert_id);
+}
+
+static gboolean
+apply_alert(gpointer userdata)
+{
+    struct alert_event *event = userdata;
+    struct ui_app *ui = event->ui;
+    bool is_new;
+
+    if (g_atomic_int_get(&ui->stopping)) {
+        g_free(event);
+        return G_SOURCE_REMOVE;
+    }
+    is_new = fl_window_add_alert(ui->window, &event->alert) &&
+             fl_ui_state_apply_alert(&ui->state, &event->alert);
+    if (is_new) {
+        ui->latest = event->alert;
+        ui->have_latest = true;
+        g_mutex_lock(&ui->mutex);
+        if (event->alert.id > ui->known_id)
+            ui->known_id = event->alert.id;
+        g_mutex_unlock(&ui->mutex);
+        if (ui->notifications_ready && fl_ui_state_should_notify(&ui->state, &event->alert)) {
+            fl_notifications_show(&event->alert, open_alert, ui);
+            fl_ui_state_mark_alert_notified(&ui->state, &event->alert);
+            save_state(ui);
+        }
+    }
+    update_indicator(ui);
+    g_free(event);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+apply_health(gpointer userdata)
+{
+    struct health_event *event = userdata;
+    if (!g_atomic_int_get(&event->ui->stopping)) {
+        fl_ui_state_apply_health(&event->ui->state, &event->health);
+        fl_window_set_health(event->ui->window, &event->health);
+        update_indicator(event->ui);
+    }
+    g_free(event);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+apply_snapshot(gpointer userdata)
+{
+    struct snapshot *snapshot = userdata;
+    struct ui_app *ui = snapshot->ui;
+    if (!g_atomic_int_get(&ui->stopping)) {
+        fl_ui_state_apply_health(&ui->state, &snapshot->health);
+        fl_window_set_health(ui->window, &snapshot->health);
+        for (guint index = snapshot->alerts->len; index > 0; --index) {
+            struct fl_alert *alert = &g_array_index(snapshot->alerts, struct fl_alert, index - 1U);
+            if (fl_window_add_alert(ui->window, alert) &&
+                fl_ui_state_apply_alert(&ui->state, alert)) {
+                ui->latest = *alert;
+                ui->have_latest = true;
+            }
+        }
+        g_mutex_lock(&ui->mutex);
+        ui->known_id = ui->state.last_alert_id;
+        g_mutex_unlock(&ui->mutex);
+        update_indicator(ui);
+    }
+    g_array_free(snapshot->alerts, true);
+    g_free(snapshot);
+    return G_SOURCE_REMOVE;
+}
+
+static gboolean
+apply_disconnected(gpointer userdata)
+{
+    struct ui_app *ui = userdata;
+    if (!g_atomic_int_get(&ui->stopping)) {
+        fl_ui_state_disconnect(&ui->state);
+        fl_window_set_offline(ui->window, "Detector unavailable · reconnecting…");
+        update_indicator(ui);
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static void
+thread_alert(const struct fl_alert *alert, void *userdata)
+{
+    struct alert_event *event = g_new(struct alert_event, 1);
+    event->ui = userdata;
+    event->alert = *alert;
+    g_idle_add(apply_alert, event);
+}
+
+static void
+thread_health(const struct fl_health *health, void *userdata)
+{
+    struct health_event *event = g_new(struct health_event, 1);
+    event->ui = userdata;
+    event->health = *health;
+    g_idle_add(apply_health, event);
+}
+
+static GArray *
+load_history(struct fl_client *client, int64_t known_id, struct fl_error *error)
+{
+    GArray *alerts = g_array_new(false, false, sizeof(struct fl_alert));
+    int64_t before_id = 0;
+    bool reached_known = false;
+
+    while (!reached_known && alerts->len < FL_UI_MAX_HISTORY) {
+        struct fl_alert_page page = {0};
+        if (!fl_client_list_alerts(client, before_id, FL_SEVERITY_MEDIUM, 200, &page, error)) {
+            fl_alert_page_clear(&page);
+            g_array_free(alerts, true);
+            return NULL;
+        }
+        for (size_t index = 0; index < page.length; ++index) {
+            if (known_id > 0 && page.items[index].id <= known_id)
+                reached_known = true;
+            g_array_append_val(alerts, page.items[index]);
+        }
+        before_id = page.next_before_id;
+        bool finished = page.length == 0 || before_id == 0;
+        fl_alert_page_clear(&page);
+        if (finished)
+            break;
+    }
+    /* shortcut: retain at most 10k rows in the desktop process; add virtual paging if field volumes exceed this. */
+    return alerts;
+}
+
+static gpointer
+connection_worker(gpointer userdata)
+{
+    struct ui_app *ui = userdata;
+    unsigned int delay_seconds = 1;
+
+    while (true) {
+        struct fl_client *client = NULL;
+        struct fl_error error = {0};
+        struct fl_health health = {0};
+        int64_t known_id;
+
+        g_mutex_lock(&ui->mutex);
+        if (g_atomic_int_get(&ui->stopping)) {
+            g_mutex_unlock(&ui->mutex);
+            break;
+        }
+        known_id = ui->known_id;
+        g_mutex_unlock(&ui->mutex);
+        if (fl_client_connect(FILELESS_SOCKET_PATH, &client, &error)) {
+            GArray *history;
+            g_mutex_lock(&ui->mutex);
+            ui->client = client;
+            g_mutex_unlock(&ui->mutex);
+            history = fl_client_get_status(client, &health, &error) ?
+                load_history(client, known_id, &error) : NULL;
+            if (history != NULL && fl_client_subscribe(client, thread_alert, thread_health, ui, &error)) {
+                struct snapshot *snapshot = g_new(struct snapshot, 1);
+                snapshot->ui = ui;
+                snapshot->health = health;
+                snapshot->alerts = history;
+                g_idle_add(apply_snapshot, snapshot);
+                delay_seconds = 1;
+                fl_client_wait(client);
+            } else if (history != NULL) {
+                g_array_free(history, true);
+            }
+            g_mutex_lock(&ui->mutex);
+            if (ui->client == client)
+                ui->client = NULL;
+            g_mutex_unlock(&ui->mutex);
+            fl_client_close(client);
+        }
+        g_idle_add(apply_disconnected, ui);
+        g_mutex_lock(&ui->mutex);
+        if (!g_atomic_int_get(&ui->stopping)) {
+            gint64 deadline = g_get_monotonic_time() + (gint64)delay_seconds * G_TIME_SPAN_SECOND;
+            g_cond_wait_until(&ui->wake, &ui->mutex, deadline);
+        }
+        bool stop = g_atomic_int_get(&ui->stopping);
+        g_mutex_unlock(&ui->mutex);
+        if (stop)
+            break;
+        if (delay_seconds < 30)
+            delay_seconds = MIN(delay_seconds * 2U, 30U);
+    }
+    return NULL;
+}
+
+static gboolean
+hide_on_delete(GtkWidget *widget, GdkEvent *event, gpointer userdata)
+{
+    (void)event;
+    (void)userdata;
+    gtk_widget_hide(widget);
+    return true;
+}
+
+static void
+load_css(void)
+{
+    GtkCssProvider *provider = gtk_css_provider_new();
+    const char *installed = "/usr/share/fileless-detector/fileless-ui.css";
+    const char *path = g_file_test(installed, G_FILE_TEST_IS_REGULAR) ? installed : "data/fileless-ui.css";
+    gtk_css_provider_load_from_path(provider, path, NULL);
+    gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
+        GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
+    g_object_unref(provider);
+}
+
+static void
+activate(GtkApplication *application, gpointer userdata)
+{
+    struct ui_app *ui = userdata;
+    struct fl_error error = {0};
+    if (ui->window != NULL) {
+        if (!ui->background)
+            open_window(ui);
+        return;
+    }
+    ui->application = application;
+    load_css();
+    ui->window = fl_window_new(application);
+    g_signal_connect(fl_window_widget(ui->window), "delete-event",
+                     G_CALLBACK(hide_on_delete), ui);
+    fl_ui_state_init(&ui->state);
+    if (!fl_ui_state_load(&ui->state, ui->state_path, &error))
+        g_warning("cannot load UI state: %s", error.message);
+    ui->known_id = ui->state.last_alert_id;
+    ui->notifications_ready = fl_notifications_init();
+    ui->indicator = fl_indicator_new(open_window, quit_ui, ui);
+    if (ui->indicator == NULL) {
+        fl_window_set_offline(ui->window, "Panel indicator unavailable · window remains usable");
+        ui->background = false;
+    }
+    update_indicator(ui);
+    ui->connection_thread = g_thread_new("fileless-ui-connection", connection_worker, ui);
+    if (!ui->background)
+        fl_window_present(ui->window);
+}
+
+static void
+shutdown_ui(struct ui_app *ui)
+{
+    g_mutex_lock(&ui->mutex);
+    g_atomic_int_set(&ui->stopping, true);
+    if (ui->client != NULL)
+        fl_client_interrupt(ui->client);
+    g_cond_signal(&ui->wake);
+    g_mutex_unlock(&ui->mutex);
+    if (ui->connection_thread != NULL)
+        g_thread_join(ui->connection_thread);
+    save_state(ui);
+    fl_indicator_free(ui->indicator);
+    fl_notifications_uninit();
+    fl_window_free(ui->window);
+}
+
+int
+main(int argc, char **argv)
+{
+    struct ui_app ui = {0};
+    GtkApplication *application;
+    int result;
+
+    signal(SIGPIPE, SIG_IGN);
+    if (argc == 2 && strcmp(argv[1], "--version") == 0) {
+        g_print("fileless-ui %s\n", FILELESS_UI_VERSION);
+        return 0;
+    }
+    if (argc == 2 && strcmp(argv[1], "--background") == 0) {
+        ui.background = true;
+        argc = 1;
+    } else if (argc != 1) {
+        g_printerr("Usage: fileless-ui [--background|--version]\n");
+        return 2;
+    }
+    g_mutex_init(&ui.mutex);
+    g_cond_init(&ui.wake);
+    ui.state_path = g_build_filename(g_get_user_state_dir(), "fileless-detector", "ui-state", NULL);
+    application = gtk_application_new("org.fileless.DetectorUI", G_APPLICATION_DEFAULT_FLAGS);
+    g_signal_connect(application, "activate", G_CALLBACK(activate), &ui);
+    result = g_application_run(G_APPLICATION(application), argc, argv);
+    if (ui.window != NULL)
+        shutdown_ui(&ui);
+    g_object_unref(application);
+    g_free(ui.state_path);
+    g_cond_clear(&ui.wake);
+    g_mutex_clear(&ui.mutex);
+    return result;
+}

@@ -1,0 +1,1 @@
+option('integration_tests', type: 'boolean', value: false, description: 'Run privileged eBPF integration tests')

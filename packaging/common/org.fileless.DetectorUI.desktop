@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fileless Detector
+Comment=View local fileless malware alerts
+Exec=fileless-ui
+Icon=fileless-healthy-symbolic
+Terminal=false
+Categories=System;Security;GTK;
+OnlyShowIn=GNOME;KDE;
+StartupNotify=true

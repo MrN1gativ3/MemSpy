@@ -1,0 +1,47 @@
+[Unit]
+Description=Fileless malware detection service
+Documentation=man:filelessd(8)
+After=local-fs.target
+ConditionPathIsReadable=/sys/kernel/btf/vmlinux
+
+[Service]
+Type=simple
+User=root
+Group=filelessd-ui
+ExecStart=/usr/bin/filelessd --foreground
+Restart=on-failure
+RestartSec=5s
+RuntimeDirectory=filelessd
+RuntimeDirectoryMode=0750
+StateDirectory=filelessd
+StateDirectoryMode=0700
+UMask=0077
+
+CapabilityBoundingSet=CAP_SYS_ADMIN CAP_DAC_READ_SEARCH CAP_SYS_PTRACE
+NoNewPrivileges=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+PrivateDevices=yes
+PrivateNetwork=yes
+PrivateTmp=yes
+ProtectClock=yes
+ProtectControlGroups=yes
+ProtectHome=yes
+ProtectHostname=yes
+ProtectKernelLogs=yes
+ProtectKernelModules=yes
+ProtectKernelTunables=yes
+ProtectSystem=strict
+ReadWritePaths=/var/lib/filelessd /run/filelessd
+RemoveIPC=yes
+RestrictAddressFamilies=AF_UNIX
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+SystemCallArchitectures=native
+SystemCallFilter=~@clock @mount @reboot @swap
+SystemCallErrorNumber=EPERM
+TasksMax=128
+
+[Install]
+WantedBy=multi-user.target

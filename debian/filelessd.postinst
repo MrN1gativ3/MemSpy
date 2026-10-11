@@ -1,0 +1,12 @@
+#!/bin/sh
+set -e
+
+if command -v systemd-sysusers >/dev/null 2>&1; then
+    systemd-sysusers /usr/lib/sysusers.d/filelessd.conf
+else
+    addgroup --system filelessd-ui >/dev/null 2>&1 || true
+fi
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/filelessd.conf || true
+
+#DEBHELPER#
+exit 0

@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Fileless Detector Indicator
+Comment=Show local fileless malware alerts in the desktop panel
+Exec=fileless-ui --background
+Icon=fileless-healthy-symbolic
+Terminal=false
+OnlyShowIn=GNOME;KDE;
+NoDisplay=true
+X-GNOME-Autostart-enabled=true

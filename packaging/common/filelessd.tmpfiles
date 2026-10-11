@@ -1,0 +1,2 @@
+d /var/lib/filelessd 0700 root root -
+d /run/filelessd 0750 root filelessd-ui -
