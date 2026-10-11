@@ -46,7 +46,7 @@ ms_indicator_new(void (*open)(void *), void (*quit)(void *), void *userdata)
     indicator->indicator = g_object_new(APP_INDICATOR_TYPE,
                                          "id", "memspy",
                                          "icon-name", "memspy-offline-symbolic",
-                                         "category", APP_INDICATOR_CATEGORY_SYSTEM_SERVICES,
+                                         "category", "SystemServices",
                                          NULL);
     if (indicator->indicator == NULL) {
         g_free(indicator);

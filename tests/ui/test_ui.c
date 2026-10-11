@@ -1,7 +1,23 @@
 #include <atk/atk.h>
 #include <gtk/gtk.h>
 
+#include "indicator.h"
 #include "window.h"
+
+static void
+noop(void *userdata)
+{
+    (void)userdata;
+}
+
+static void
+test_indicator_constructs(void)
+{
+    struct ms_indicator *indicator = ms_indicator_new(noop, noop, NULL);
+
+    g_assert_nonnull(indicator);
+    ms_indicator_free(indicator);
+}
 
 static struct ms_alert
 fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
@@ -64,6 +80,7 @@ main(int argc, char **argv)
         g_test_message("GTK display unavailable");
         return 77;
     }
+    g_test_add_func("/ui/indicator-constructs", test_indicator_constructs);
     g_test_add_func("/ui/window-states-filters-accessibility",
                     test_window_states_filters_and_accessibility);
     return g_test_run();

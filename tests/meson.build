@@ -126,10 +126,11 @@ test('ui-state', ui_state_test)
 ui_test = executable(
   'test-ui',
   'ui/test_ui.c',
+  '../src/ui/indicator.c',
   '../src/ui/window.c',
   '../src/ui/state.c',
   include_directories: [inc, include_directories('../src/ui')],
-  dependencies: [glib_dep, gtk_dep],
+  dependencies: [glib_dep, gtk_dep, appindicator_dep],
 )
 
 test('ui', ui_test)
