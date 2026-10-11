@@ -33,6 +33,7 @@ int
 main(int argc, char **argv)
 {
     struct ms_sensor *sensor = NULL;
+    struct ms_sensor_stats stats = {0};
     struct ms_error error = {0};
     struct harness harness = {0};
     int child_status = 0;
@@ -65,6 +66,7 @@ main(int argc, char **argv)
     }
     if (!child_reaped)
         waitpid(harness.fixture_pid, &child_status, 0);
+    ms_sensor_stats(sensor, &stats);
     ms_sensor_free(sensor);
     ms_policy_free(harness.policy);
     if (harness.expect_none && harness.found) {
@@ -72,7 +74,13 @@ main(int argc, char **argv)
         return 1;
     }
     if (!harness.expect_none && !harness.found) {
-        g_printerr("expected rule not observed: %s\n", argv[2]);
+        g_printerr("expected rule not observed: %s "
+                   "(received=%llu invalid=%llu lost=%llu child_status=%d)\n",
+                   argv[2],
+                   (unsigned long long)stats.received_events,
+                   (unsigned long long)stats.invalid_events,
+                   (unsigned long long)stats.lost_events,
+                   child_status);
         return 1;
     }
     return 0;
