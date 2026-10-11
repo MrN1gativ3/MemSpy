@@ -60,25 +60,32 @@ has_button_label(GtkWidget *widget, const char *text)
     return false;
 }
 
+struct label_search {
+    const char *text;
+    bool found;
+};
+
+static void
+find_label_text(GtkWidget *widget, gpointer userdata)
+{
+    struct label_search *search = userdata;
+
+    if (search->found)
+        return;
+    if (GTK_IS_LABEL(widget) &&
+        g_strcmp0(gtk_label_get_text(GTK_LABEL(widget)), search->text) == 0)
+        search->found = true;
+    else if (GTK_IS_CONTAINER(widget))
+        gtk_container_forall(GTK_CONTAINER(widget), find_label_text, search);
+}
+
 static bool
 has_label_text(GtkWidget *widget, const char *text)
 {
-    GList *children;
-    GList *item;
+    struct label_search search = {.text = text};
 
-    if (GTK_IS_LABEL(widget) && g_strcmp0(gtk_label_get_text(GTK_LABEL(widget)), text) == 0)
-        return true;
-    if (!GTK_IS_CONTAINER(widget))
-        return false;
-    children = gtk_container_get_children(GTK_CONTAINER(widget));
-    for (item = children; item != NULL; item = item->next) {
-        if (has_label_text(GTK_WIDGET(item->data), text)) {
-            g_list_free(children);
-            return true;
-        }
-    }
-    g_list_free(children);
-    return false;
+    find_label_text(widget, &search);
+    return search.found;
 }
 
 static void
