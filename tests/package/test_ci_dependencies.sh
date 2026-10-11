@@ -8,5 +8,6 @@ printf '%s\n' "$install_block" | grep -qw linux-tools-generic
 ! printf '%s\n' "$install_block" | grep -qw bpftool
 grep -q 'bpftool version' "$workflow"
 grep -Fq '/usr/lib/linux-tools' "$workflow"
+grep -Fq -- "-path '/usr/lib/linux-tools*'" "$workflow"
 grep -Fq '/usr/local/bin/bpftool' "$workflow"
 ! grep -Fq 'linux-tools-$(uname -r)' "$workflow"

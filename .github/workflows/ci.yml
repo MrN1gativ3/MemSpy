@@ -16,8 +16,13 @@ jobs:
             libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libgtk-3-dev \
             libayatana-appindicator3-dev libnotify-dev xvfb dbus-x11
           # Hosted runner kernels can be newer than Noble's matching tools package.
-          bpftool_binary=$(find /usr/lib/linux-tools -type f -name bpftool -perm -111 -print | sort -V | tail -n 1)
-          test -n "$bpftool_binary"
+          bpftool_binary=$(find /usr/lib -maxdepth 3 -type f -name bpftool -perm -111 \
+            -path '/usr/lib/linux-tools*' -print 2>/dev/null | sort -V | tail -n 1)
+          if [ -z "$bpftool_binary" ]; then
+            echo '::error::linux-tools-generic did not provide a usable bpftool binary'
+            dpkg -l 'linux-tools*' || true
+            exit 1
+          fi
           sudo install -m 0755 "$bpftool_binary" /usr/local/bin/bpftool
           bpftool version
       - name: Configure sanitized build
