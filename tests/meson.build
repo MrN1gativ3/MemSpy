@@ -95,8 +95,9 @@ test('daemon', daemon_test)
 test('daemon-integration', find_program('sh'),
      args: [meson.current_source_dir() / 'integration/test_daemon.sh', filelessd])
 
-test('ubuntu-installer', find_program('sh'),
+test('installer', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ubuntu_installer.sh',
+            meson.project_source_root() / 'install.sh',
             meson.project_source_root() / 'packaging/ubuntu/install-test-vm.sh'])
 
 test('ci-dependencies', find_program('sh'),

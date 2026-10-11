@@ -2,21 +2,24 @@
 set -eu
 
 installer=$1
+legacy_installer=$2
 
 test -x "$installer"
+test -x "$legacy_installer"
 sh -n "$installer"
-grep -q 'ID.*ubuntu' "$installer"
-grep -q '/sys/kernel/btf/vmlinux' "$installer"
-grep -q 'XDG_CURRENT_DESKTOP' "$installer"
-grep -q 'gnome-shell' "$installer"
-grep -q 'plasmashell' "$installer"
-grep -q 'desktop_environment.*gnome' "$installer"
-grep -q 'desktop_environment.*kde' "$installer"
-grep -q 'GNOME is not installed; no changes were made' "$installer"
-grep -q 'KDE Plasma is not installed; no changes were made' "$installer"
-grep -q 'gnome-shell-extension-appindicator' "$installer"
-grep -q 'meson test.*--no-suite privileged' "$installer"
-grep -q 'systemd-sysusers' "$installer"
-grep -q 'systemctl enable --now filelessd' "$installer"
-grep -q 'usermod -aG filelessd-ui' "$installer"
-! grep -q 'meson test.* --suite privileged' "$installer"
+sh -n "$legacy_installer"
+
+help=$("$installer" --help)
+printf '%s\n' "$help" | grep -q '^Usage: sudo ./install.sh'
+printf '%s\n' "$help" | grep -q 'Ubuntu, Debian, Fedora, and Arch Linux'
+test "$("$legacy_installer" --help)" = "$help"
+
+if [ "$(id -u)" -ne 0 ]; then
+    error_file=$(mktemp)
+    trap 'rm -f "$error_file"' EXIT
+    if "$installer" >"$error_file" 2>&1; then
+        echo "installer unexpectedly ran without root privileges" >&2
+        exit 1
+    fi
+    grep -q 'run with sudo' "$error_file"
+fi

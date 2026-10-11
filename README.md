@@ -57,24 +57,24 @@ The eBPF programs collect only the kernel events required by the rules. Policy, 
 | Desktop | GNOME with AppIndicator support, or KDE Plasma with built-in StatusNotifier support |
 | Distribution targets | Ubuntu/Debian, Fedora, and Arch Linux |
 
-The Ubuntu installer is ready for VM testing. The Debian, Fedora, and Arch package definitions are included, but still require qualification on clean target-system VMs.
+The source installer supports Ubuntu, Debian, Fedora, and Arch Linux. Each exact distribution and kernel combination still requires qualification on a clean target-system VM.
 
-## Quick start on an Ubuntu VM
+## Quick installation
 
-Clone or copy this repository into an x86_64 Ubuntu VM, open a terminal in the project directory, and run:
+Clone or copy this repository into a supported x86_64 VM, open a terminal in the project directory, and run one command:
 
 ```sh
-sudo ./packaging/ubuntu/install-test-vm.sh "$USER"
+sudo ./install.sh
 ```
 
-The installer validates Ubuntu, architecture, kernel BTF, kernel version, desktop environment, and desktop user before installing packages. It detects GNOME or KDE automatically and stops without installing anything if neither is present.
+The installer detects the distribution and desktop user, validates the architecture, kernel, BTF, systemd, and GNOME/KDE environment, installs build dependencies, builds and tests MemSpy, installs it, and starts the daemon. It stops before installing packages if neither GNOME nor KDE is present.
 
 If both desktops are installed and the active one cannot be determined, select it explicitly:
 
 ```sh
-sudo ./packaging/ubuntu/install-test-vm.sh "$USER" gnome
+sudo ./install.sh "$USER" gnome
 # or
-sudo ./packaging/ubuntu/install-test-vm.sh "$USER" kde
+sudo ./install.sh "$USER" kde
 ```
 
 Log out and back in after installation so the new `filelessd-ui` group membership takes effect. The indicator is configured to start with the desktop session; it can also be launched manually:
@@ -90,7 +90,7 @@ systemctl status filelessd
 journalctl -u filelessd
 ```
 
-## Build and test from source
+## Manual build and test for contributors
 
 The project uses Meson, Ninja, Clang, and bpftool. Required libraries are libbpf, SQLite, json-c, GLib, GTK 3, Ayatana AppIndicator, and libnotify.
 
