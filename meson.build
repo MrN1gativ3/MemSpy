@@ -28,6 +28,7 @@ bpf_object = custom_target(
   input: 'src/bpf/fileless.bpf.c',
   output: 'fileless.bpf.o',
   command: [clang, '-g', '-O2', '-target', 'bpf', '-D__TARGET_ARCH_x86',
+            '-I/usr/include/' + host_machine.cpu_family() + '-linux-gnu',
             '-I' + meson.current_source_dir() / 'src/bpf', '-c', '@INPUT@', '-o', '@OUTPUT@'],
   install: true,
   install_dir: get_option('libexecdir') / 'filelessd',
