@@ -70,7 +70,7 @@ The interface inherits the desktop's Cantarell/system sans stack. Rule IDs, PIDs
 
 ## Layout
 
-The default window is 440×560, resizable down to a practical compact desktop size. A fixed-height health banner and filter row sit above one vertically scrolling alert list. Loading, empty, disconnected, degraded, and error states occupy the same list region to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
+The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner and filter row sit above one vertically scrolling alert list. Loading, empty, disconnected, degraded, and error states occupy the same list region to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
 
 ## Elevation & Depth
 
@@ -88,11 +88,11 @@ GTK owns hover, focus-visible, active, disabled, and high-contrast behavior. Loa
 
 ### Buttons and actions
 
-Filters are GTK toggle/radio-style buttons labeled All, High, and Medium. The panel menu uses explicit actions: Open alerts and Quit UI. Icon-only shell presentation retains accessible names in the application. Button dimensions remain stable while reconnecting.
+Filters are GTK toggle/radio-style buttons labeled All, High, and Medium with visible counts. The panel menu uses explicit actions: Open alerts and Quit UI. Icon-only shell presentation retains accessible names in the application. Button dimensions remain stable while reconnecting.
 
 ### Navigation and data display
 
-There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes time, severity, rule, process, executable, and a keyboard-operable evidence disclosure. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present.
+There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, process, executable, and a keyboard-operable evidence disclosure with labeled fields. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
 
 ### Forms and overlays
 

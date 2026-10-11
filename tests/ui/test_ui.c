@@ -39,6 +39,48 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
     return alert;
 }
 
+static bool
+has_button_label(GtkWidget *widget, const char *text)
+{
+    GList *children;
+    GList *item;
+
+    if (GTK_IS_BUTTON(widget) && g_strcmp0(gtk_button_get_label(GTK_BUTTON(widget)), text) == 0)
+        return true;
+    if (!GTK_IS_CONTAINER(widget))
+        return false;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (item = children; item != NULL; item = item->next) {
+        if (has_button_label(GTK_WIDGET(item->data), text)) {
+            g_list_free(children);
+            return true;
+        }
+    }
+    g_list_free(children);
+    return false;
+}
+
+static bool
+has_label_text(GtkWidget *widget, const char *text)
+{
+    GList *children;
+    GList *item;
+
+    if (GTK_IS_LABEL(widget) && g_strcmp0(gtk_label_get_text(GTK_LABEL(widget)), text) == 0)
+        return true;
+    if (!GTK_IS_CONTAINER(widget))
+        return false;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (item = children; item != NULL; item = item->next) {
+        if (has_label_text(GTK_WIDGET(item->data), text)) {
+            g_list_free(children);
+            return true;
+        }
+    }
+    g_list_free(children);
+    return false;
+}
+
 static void
 test_window_states_filters_and_accessibility(void)
 {
@@ -52,23 +94,45 @@ test_window_states_filters_and_accessibility(void)
         "fixture --a-very-long-command-line-that-must-wrap-without-hiding-evidence");
     struct ms_alert medium = fixture_alert(1, MS_SEVERITY_MEDIUM, "fixture --medium");
     AtkObject *accessible = gtk_widget_get_accessible(GTK_WIDGET(ms_window_widget(window)));
+    GtkWidget *titlebar = gtk_window_get_titlebar(ms_window_widget(window));
 
     g_assert_cmpstr(atk_object_get_name(accessible), ==, "Fileless malware alerts");
+    g_assert_cmpstr(gtk_header_bar_get_subtitle(GTK_HEADER_BAR(titlebar)), ==,
+                    "Fileless activity monitor");
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 0"));
     ms_window_set_loading(window);
     g_assert_cmpstr(ms_window_status_text(window), ==, "Connecting to detector…");
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
+                                 "Showing available alert history"));
     ms_window_set_health(window, &degraded);
     g_assert_cmpstr(ms_window_status_text(window), ==, "Monitoring degraded");
     g_assert_true(ms_window_add_alert(window, &medium));
+    ms_window_set_filter(window, MS_UI_FILTER_HIGH);
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
+                                 "No high-severity alerts"));
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
+                                 "Monitoring the last 30 days"));
     g_assert_true(ms_window_add_alert(window, &high));
     g_assert_false(ms_window_add_alert(window, &high));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 2"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "High 1"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "Medium 1"));
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)), "Executable"));
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)), "Detection signal"));
+    ms_window_set_filter(window, MS_UI_FILTER_ALL);
     g_assert_cmpuint(ms_window_visible_count(window), ==, 2);
     ms_window_set_filter(window, MS_UI_FILTER_HIGH);
     g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
     g_assert_true(ms_window_select_alert(window, 2));
     ms_window_set_filter(window, MS_UI_FILTER_MEDIUM);
     g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
-    ms_window_set_offline(window, "Detector unavailable");
+    ms_window_set_offline(window, "Detector unavailable",
+                          "MemSpy will reconnect automatically");
     g_assert_cmpstr(ms_window_status_text(window), ==, "Detector unavailable");
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
+                                 "MemSpy will reconnect automatically"));
+    g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
+                                 "Showing available alert history"));
     ms_window_free(window);
 }
 

@@ -11,7 +11,7 @@ struct ms_window *ms_window_new(GtkApplication *application);
 GtkWindow *ms_window_widget(struct ms_window *window);
 void ms_window_set_loading(struct ms_window *window);
 void ms_window_set_health(struct ms_window *window, const struct ms_health *health);
-void ms_window_set_offline(struct ms_window *window, const char *message);
+void ms_window_set_offline(struct ms_window *window, const char *message, const char *detail);
 const char *ms_window_status_text(const struct ms_window *window);
 bool ms_window_add_alert(struct ms_window *window, const struct ms_alert *alert);
 void ms_window_set_filter(struct ms_window *window, enum ms_ui_filter filter);

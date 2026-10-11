@@ -163,7 +163,8 @@ apply_disconnected(gpointer userdata)
     struct ui_app *ui = userdata;
     if (!g_atomic_int_get(&ui->stopping)) {
         ms_ui_state_disconnect(&ui->state);
-        ms_window_set_offline(ui->window, "Detector unavailable · reconnecting…");
+        ms_window_set_offline(ui->window, "Detector unavailable",
+                              "MemSpy will reconnect automatically");
         update_indicator(ui);
     }
     return G_SOURCE_REMOVE;
@@ -318,7 +319,8 @@ activate(GtkApplication *application, gpointer userdata)
     ui->notifications_ready = ms_notifications_init();
     ui->indicator = ms_indicator_new(open_window, quit_ui, ui);
     if (ui->indicator == NULL) {
-        ms_window_set_offline(ui->window, "Panel indicator unavailable · window remains usable");
+        ms_window_set_offline(ui->window, "Panel indicator unavailable",
+                              "Alerts remain available in this window");
         ui->background = false;
     }
     update_indicator(ui);
