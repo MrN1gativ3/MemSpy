@@ -99,6 +99,10 @@ test('ubuntu-installer', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ubuntu_installer.sh',
             meson.project_source_root() / 'packaging/ubuntu/install-test-vm.sh'])
 
+test('ci-dependencies', find_program('sh'),
+     args: [meson.current_source_dir() / 'package/test_ci_dependencies.sh',
+            meson.project_source_root() / '.github/workflows/ci.yml'])
+
 ui_state_test = executable(
   'test-ui-state',
   'unit/test_ui_state.c',
