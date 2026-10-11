@@ -93,12 +93,16 @@ daemon_test = executable(
 test('daemon', daemon_test)
 
 test('daemon-integration', find_program('sh'),
-     args: [meson.current_source_dir() / 'integration/test_daemon.sh', filelessd])
+     args: [meson.current_source_dir() / 'integration/test_daemon.sh', memspyd])
 
 test('installer', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ubuntu_installer.sh',
             meson.project_source_root() / 'install.sh',
             meson.project_source_root() / 'packaging/ubuntu/install-test-vm.sh'])
+
+test('migration', find_program('sh'),
+     args: [meson.current_source_dir() / 'package/test_migration.sh',
+            meson.project_source_root() / 'packaging/common/migrate-legacy.sh'])
 
 test('ci-dependencies', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ci_dependencies.sh',
@@ -131,7 +135,7 @@ ui_test = executable(
 test('ui', ui_test)
 
 foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'ordinary_exec']
-  executable(fixture, 'fixtures/' + fixture + '.c', install: false)
+  executable(fixture, '../test-samples/' + fixture + '.c', install: false)
 endforeach
 
 sensor_harness = executable(

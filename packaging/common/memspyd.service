@@ -1,19 +1,19 @@
 [Unit]
-Description=Fileless malware detection service
-Documentation=man:filelessd(8)
+Description=MemSpy fileless malware detection service
+Documentation=man:memspyd(8)
 After=local-fs.target
 ConditionPathIsReadable=/sys/kernel/btf/vmlinux
 
 [Service]
 Type=simple
 User=root
-Group=filelessd-ui
-ExecStart=/usr/bin/filelessd --foreground
+Group=memspy-ui
+ExecStart=/usr/bin/memspyd --foreground
 Restart=on-failure
 RestartSec=5s
-RuntimeDirectory=filelessd
+RuntimeDirectory=memspy
 RuntimeDirectoryMode=0750
-StateDirectory=filelessd
+StateDirectory=memspy
 StateDirectoryMode=0700
 UMask=0077
 
@@ -32,7 +32,7 @@ ProtectKernelLogs=yes
 ProtectKernelModules=yes
 ProtectKernelTunables=yes
 ProtectSystem=strict
-ReadWritePaths=/var/lib/filelessd /run/filelessd
+ReadWritePaths=/var/lib/memspy /run/memspy
 RemoveIPC=yes
 RestrictAddressFamilies=AF_UNIX
 RestrictNamespaces=yes

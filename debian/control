@@ -1,16 +1,18 @@
-Source: filelessd
+Source: memspyd
 Section: admin
 Priority: optional
-Maintainer: Fileless Detector maintainers <maintainers@invalid.example>
+Maintainer: MemSpy maintainers <maintainers@invalid.example>
 Build-Depends: debhelper-compat (= 13), meson, ninja-build, clang, bpftool, pkgconf,
  libbpf-dev, libglib2.0-dev, libjson-c-dev, libsqlite3-dev, libgtk-3-dev,
  libayatana-appindicator3-dev, libnotify-dev
 Standards-Version: 4.7.2
 Rules-Requires-Root: no
 
-Package: filelessd
+Package: memspyd
 Architecture: amd64
 Depends: ${shlibs:Depends}, ${misc:Depends}, systemd
+Conflicts: filelessd
+Replaces: filelessd
 Suggests: gnome-shell-extension-appindicator
 Description: local eBPF fileless malware detector for GNOME and KDE
  A privileged detection-only daemon observes high-confidence fileless execution

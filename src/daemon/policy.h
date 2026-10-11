@@ -1,22 +1,22 @@
-#ifndef FILELESS_POLICY_H
-#define FILELESS_POLICY_H
+#ifndef MEMSPY_POLICY_H
+#define MEMSPY_POLICY_H
 
 #include <stdint.h>
 
-#include "fileless/observation.h"
+#include "memspy/observation.h"
 
-enum fl_policy_result {
-    FL_POLICY_NONE = 0,
-    FL_POLICY_ALERT,
+enum ms_policy_result {
+    MS_POLICY_NONE = 0,
+    MS_POLICY_ALERT,
 };
 
-struct fl_policy;
+struct ms_policy;
 
-struct fl_policy *fl_policy_new(void);
-void fl_policy_free(struct fl_policy *policy);
-enum fl_policy_result fl_policy_ingest(struct fl_policy *policy,
-                                       const struct fl_observation *observation,
-                                       struct fl_alert *alert);
-uint64_t fl_policy_pressure(const struct fl_policy *policy);
+struct ms_policy *ms_policy_new(void);
+void ms_policy_free(struct ms_policy *policy);
+enum ms_policy_result ms_policy_ingest(struct ms_policy *policy,
+                                       const struct ms_observation *observation,
+                                       struct ms_alert *alert);
+uint64_t ms_policy_pressure(const struct ms_policy *policy);
 
 #endif

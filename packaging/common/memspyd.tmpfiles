@@ -1,0 +1,2 @@
+d /var/lib/memspy 0700 root root -
+d /run/memspy 0750 root memspy-ui -

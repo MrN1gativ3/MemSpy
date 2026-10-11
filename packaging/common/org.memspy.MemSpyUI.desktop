@@ -1,9 +1,9 @@
 [Desktop Entry]
 Type=Application
-Name=Fileless Detector
+Name=MemSpy
 Comment=View local fileless malware alerts
-Exec=fileless-ui
-Icon=fileless-healthy-symbolic
+Exec=memspy-ui
+Icon=memspy-healthy-symbolic
 Terminal=false
 Categories=System;Security;GTK;
 OnlyShowIn=GNOME;KDE;

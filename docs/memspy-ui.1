@@ -1,0 +1,20 @@
+.TH MEMSPY-UI 1 "October 2026" "memspy 0.1.0" "User Commands"
+.SH NAME
+memspy-ui \- GNOME and KDE indicator and alert viewer for memspyd
+.SH SYNOPSIS
+.B memspy-ui
+.RI [ --background | --version ]
+.SH DESCRIPTION
+.B memspy-ui
+is an unprivileged GTK application. It shows daemon health and retained High and Medium alerts, and emits native notifications only for High alerts.
+.SH OPTIONS
+.TP
+.B --background
+Start the panel indicator without presenting the window.
+.TP
+.B --version
+Print the version.
+.SH ACCESS
+The current user must belong to the memspy-ui group. Log out and back in after an administrator adds group membership. GNOME must have its standard AppIndicator support enabled for the panel icon. KDE Plasma uses its built-in StatusNotifier support. The normal application window remains usable without a panel icon.
+.SH SEE ALSO
+.BR memspyd (8)

@@ -1,15 +1,15 @@
-#ifndef FILELESS_UI_INDICATOR_H
-#define FILELESS_UI_INDICATOR_H
+#ifndef MEMSPY_UI_INDICATOR_H
+#define MEMSPY_UI_INDICATOR_H
 
 #include "state.h"
 
-struct fl_indicator;
+struct ms_indicator;
 
-struct fl_indicator *fl_indicator_new(void (*open)(void *), void (*quit)(void *),
+struct ms_indicator *ms_indicator_new(void (*open)(void *), void (*quit)(void *),
                                       void *userdata);
-void fl_indicator_update(struct fl_indicator *indicator,
-                         enum fl_indicator_state state,
-                         const struct fl_alert *latest);
-void fl_indicator_free(struct fl_indicator *indicator);
+void ms_indicator_update(struct ms_indicator *indicator,
+                         enum ms_indicator_state state,
+                         const struct ms_alert *latest);
+void ms_indicator_free(struct ms_indicator *indicator);
 
 #endif

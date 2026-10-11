@@ -4,7 +4,7 @@
 #include <libayatana-appindicator/app-indicator.h>
 #include <stdio.h>
 
-struct fl_indicator {
+struct ms_indicator {
     AppIndicator *indicator;
     GtkWidget *menu;
     GtkWidget *status;
@@ -17,7 +17,7 @@ struct fl_indicator {
 static void
 open_activated(GtkMenuItem *item, gpointer userdata)
 {
-    struct fl_indicator *indicator = userdata;
+    struct ms_indicator *indicator = userdata;
     (void)item;
     indicator->open(indicator->userdata);
 }
@@ -25,27 +25,27 @@ open_activated(GtkMenuItem *item, gpointer userdata)
 static void
 quit_activated(GtkMenuItem *item, gpointer userdata)
 {
-    struct fl_indicator *indicator = userdata;
+    struct ms_indicator *indicator = userdata;
     (void)item;
     indicator->quit(indicator->userdata);
 }
 
-struct fl_indicator *
-fl_indicator_new(void (*open)(void *), void (*quit)(void *), void *userdata)
+struct ms_indicator *
+ms_indicator_new(void (*open)(void *), void (*quit)(void *), void *userdata)
 {
-    struct fl_indicator *indicator;
+    struct ms_indicator *indicator;
     GtkWidget *open_item;
     GtkWidget *quit_item;
 
     if (open == NULL || quit == NULL)
         return NULL;
-    indicator = g_new0(struct fl_indicator, 1);
+    indicator = g_new0(struct ms_indicator, 1);
     indicator->open = open;
     indicator->quit = quit;
     indicator->userdata = userdata;
     indicator->indicator = g_object_new(APP_INDICATOR_TYPE,
-                                         "id", "fileless-detector",
-                                         "icon-name", "fileless-offline-symbolic",
+                                         "id", "memspy",
+                                         "icon-name", "memspy-offline-symbolic",
                                          "category", APP_INDICATOR_CATEGORY_SYSTEM_SERVICES,
                                          NULL);
     if (indicator->indicator == NULL) {
@@ -69,17 +69,17 @@ fl_indicator_new(void (*open)(void *), void (*quit)(void *), void *userdata)
     gtk_widget_show_all(indicator->menu);
     app_indicator_set_menu(indicator->indicator, GTK_MENU(indicator->menu));
     app_indicator_set_status(indicator->indicator, APP_INDICATOR_STATUS_ACTIVE);
-    app_indicator_set_title(indicator->indicator, "Fileless Detector");
+    app_indicator_set_title(indicator->indicator, "MemSpy");
     return indicator;
 }
 
 void
-fl_indicator_update(struct fl_indicator *indicator, enum fl_indicator_state state,
-                    const struct fl_alert *latest)
+ms_indicator_update(struct ms_indicator *indicator, enum ms_indicator_state state,
+                    const struct ms_alert *latest)
 {
     static const char *icons[] = {
-        "fileless-offline-symbolic", "fileless-healthy-symbolic",
-        "fileless-medium-symbolic", "fileless-high-symbolic",
+        "memspy-offline-symbolic", "memspy-healthy-symbolic",
+        "memspy-medium-symbolic", "memspy-high-symbolic",
     };
     static const char *labels[] = {
         "Detector unavailable", "Monitoring active",
@@ -87,7 +87,7 @@ fl_indicator_update(struct fl_indicator *indicator, enum fl_indicator_state stat
     };
     char summary[160];
 
-    if (indicator == NULL || state < FL_INDICATOR_OFFLINE || state > FL_INDICATOR_HIGH)
+    if (indicator == NULL || state < MS_INDICATOR_OFFLINE || state > MS_INDICATOR_HIGH)
         return;
     app_indicator_set_icon_full(indicator->indicator, icons[state], labels[state]);
     gtk_menu_item_set_label(GTK_MENU_ITEM(indicator->status), labels[state]);
@@ -95,14 +95,14 @@ fl_indicator_update(struct fl_indicator *indicator, enum fl_indicator_state stat
         gtk_menu_item_set_label(GTK_MENU_ITEM(indicator->latest), "No alerts");
     } else {
         snprintf(summary, sizeof summary, "Latest: %s · %s",
-                 latest->severity == FL_SEVERITY_HIGH ? "High" : "Medium",
+                 latest->severity == MS_SEVERITY_HIGH ? "High" : "Medium",
                  latest->rule_id);
         gtk_menu_item_set_label(GTK_MENU_ITEM(indicator->latest), summary);
     }
 }
 
 void
-fl_indicator_free(struct fl_indicator *indicator)
+ms_indicator_free(struct ms_indicator *indicator)
 {
     if (indicator == NULL)
         return;

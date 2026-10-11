@@ -1,22 +1,22 @@
-.TH FILELESSD 8 "October 2026" "fileless-detector 0.1.0" "System Administration"
+.TH MEMSPYD 8 "October 2026" "memspy 0.1.0" "System Administration"
 .SH NAME
-filelessd \- detect high-confidence fileless malware behavior with eBPF
+memspyd \- detect high-confidence fileless malware behavior with eBPF
 .SH SYNOPSIS
-.B filelessd
+.B memspyd
 .RI [ options ]
 .SH DESCRIPTION
-.B filelessd
+.B memspyd
 loads observational eBPF probes, evaluates local detection rules, retains alerts for 30 days, and exposes a read-only Unix socket API. It does not block, kill, quarantine, inspect payload memory, or open a network listener.
 .SH OPTIONS
 .TP
 .BI --config " PATH"
-Use an exact-path allowlist other than /etc/filelessd/allowlist.conf.
+Use an exact-path allowlist other than /etc/memspy/allowlist.conf.
 .TP
 .BI --database " PATH"
-Use an alert database other than /var/lib/filelessd/alerts.db.
+Use an alert database other than /var/lib/memspy/alerts.db.
 .TP
 .BI --socket " PATH"
-Use a Unix socket other than /run/filelessd/filelessd.sock.
+Use a Unix socket other than /run/memspy/memspy.sock.
 .TP
 .B --foreground
 Run in the foreground. This is the packaged default.
@@ -28,19 +28,19 @@ Print the version.
 Print command help.
 .SH FILES
 .TP
-.I /etc/filelessd/allowlist.conf
+.I /etc/memspy/allowlist.conf
 One exact rule ID and absolute executable path per line.
 .TP
-.I /var/lib/filelessd/alerts.db
+.I /var/lib/memspy/alerts.db
 Root-owned SQLite alert history, mode 0600.
 .TP
-.I /run/filelessd/filelessd.sock
-Local read-only API, mode 0660 and group filelessd-ui.
+.I /run/memspy/memspy.sock
+Local read-only API, mode 0660 and group memspy-ui.
 .SH STORAGE FAILURE
 If the SQLite database cannot open, the service preserves it, continues bounded live detection in degraded health, and retries storage every 60 seconds.
 .SH SECURITY
-The service requires x86_64 Linux 5.4 or newer and readable kernel BTF at /sys/kernel/btf/vmlinux. Add only trusted desktop users to filelessd-ui. Membership permits reading alert metadata from all monitored users.
+The service requires x86_64 Linux 5.4 or newer and readable kernel BTF at /sys/kernel/btf/vmlinux. Add only trusted desktop users to memspy-ui. Membership permits reading alert metadata from all monitored users.
 .SH SEE ALSO
-.BR fileless-ui (1),
+.BR memspy-ui (1),
 .BR systemctl (1),
 .BR journalctl (1)

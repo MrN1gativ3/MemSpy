@@ -1,0 +1,14 @@
+usr/bin/memspyd
+usr/bin/memspy-ui
+usr/libexec/memspy/memspy.bpf.o
+usr/libexec/memspy/migrate-legacy
+usr/lib/systemd/system/memspyd.service
+usr/lib/tmpfiles.d/memspyd.conf
+usr/lib/sysusers.d/memspyd.conf
+usr/share/applications/org.memspy.MemSpyUI.desktop
+usr/share/memspy/memspy-ui.css
+usr/share/icons/hicolor/scalable/status/*.svg
+usr/share/man/man1/memspy-ui.1
+usr/share/man/man8/memspyd.8
+etc/memspy/allowlist.conf
+etc/xdg/autostart/org.memspy.MemSpyUI.desktop

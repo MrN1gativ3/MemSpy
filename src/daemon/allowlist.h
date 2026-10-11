@@ -1,15 +1,15 @@
-#ifndef FILELESS_ALLOWLIST_H
-#define FILELESS_ALLOWLIST_H
+#ifndef MEMSPY_ALLOWLIST_H
+#define MEMSPY_ALLOWLIST_H
 
 #include <stdbool.h>
 
-#include "fileless/protocol.h"
+#include "memspy/protocol.h"
 
-struct fl_allowlist;
+struct ms_allowlist;
 
-bool fl_allowlist_load(const char *path, struct fl_allowlist **out, struct fl_error *error);
-bool fl_allowlist_matches(const struct fl_allowlist *allowlist, const char *rule_id,
+bool ms_allowlist_load(const char *path, struct ms_allowlist **out, struct ms_error *error);
+bool ms_allowlist_matches(const struct ms_allowlist *allowlist, const char *rule_id,
                           const char *canonical_exe);
-void fl_allowlist_free(struct fl_allowlist *allowlist);
+void ms_allowlist_free(struct ms_allowlist *allowlist);
 
 #endif

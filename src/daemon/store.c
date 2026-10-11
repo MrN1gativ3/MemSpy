@@ -12,16 +12,16 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define FL_STORE_SCHEMA_VERSION 1
-#define FL_STORE_MAX_PAGE 200U
-#define FL_STORE_MAX_PRUNE_BATCH 100U
+#define MS_STORE_SCHEMA_VERSION 1
+#define MS_STORE_MAX_PAGE 200U
+#define MS_STORE_MAX_PRUNE_BATCH 100U
 
-struct fl_store {
+struct ms_store {
     sqlite3 *database;
 };
 
 static void
-set_error(struct fl_error *error, const char *code, const char *format, ...)
+set_error(struct ms_error *error, const char *code, const char *format, ...)
 {
     va_list args;
 
@@ -34,7 +34,7 @@ set_error(struct fl_error *error, const char *code, const char *format, ...)
 }
 
 static bool
-execute(sqlite3 *database, const char *sql, struct fl_error *error)
+execute(sqlite3 *database, const char *sql, struct ms_error *error)
 {
     char *message = NULL;
     int result = sqlite3_exec(database, sql, NULL, NULL, &message);
@@ -47,7 +47,7 @@ execute(sqlite3 *database, const char *sql, struct fl_error *error)
 }
 
 static bool
-read_user_version(sqlite3 *database, int *version, struct fl_error *error)
+read_user_version(sqlite3 *database, int *version, struct ms_error *error)
 {
     sqlite3_stmt *statement = NULL;
     int result = sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &statement, NULL);
@@ -68,7 +68,7 @@ read_user_version(sqlite3 *database, int *version, struct fl_error *error)
 }
 
 static bool
-migrate(sqlite3 *database, struct fl_error *error)
+migrate(sqlite3 *database, struct ms_error *error)
 {
     static const char schema[] =
         "BEGIN IMMEDIATE;"
@@ -91,7 +91,7 @@ migrate(sqlite3 *database, struct fl_error *error)
 
     if (!read_user_version(database, &version, error))
         return false;
-    if (version == FL_STORE_SCHEMA_VERSION)
+    if (version == MS_STORE_SCHEMA_VERSION)
         return true;
     if (version != 0) {
         set_error(error, "store_schema", "unsupported schema version %d", version);
@@ -105,9 +105,9 @@ migrate(sqlite3 *database, struct fl_error *error)
 }
 
 bool
-fl_store_open(const char *path, struct fl_store **out, struct fl_error *error)
+ms_store_open(const char *path, struct ms_store **out, struct ms_error *error)
 {
-    struct fl_store *store;
+    struct ms_store *store;
     int descriptor;
     int result;
 
@@ -137,24 +137,24 @@ fl_store_open(const char *path, struct fl_store **out, struct fl_error *error)
                              NULL);
     if (result != SQLITE_OK) {
         set_error(error, "store_error", "%s", sqlite3_errmsg(store->database));
-        fl_store_close(store);
+        ms_store_close(store);
         return false;
     }
     sqlite3_busy_timeout(store->database, 3000);
     if (!execute(store->database, "PRAGMA journal_mode=WAL", error) ||
         !execute(store->database, "PRAGMA synchronous=FULL", error) ||
         !migrate(store->database, error)) {
-        fl_store_close(store);
+        ms_store_close(store);
         return false;
     }
     *out = store;
     if (error != NULL)
-        *error = (struct fl_error){0};
+        *error = (struct ms_error){0};
     return true;
 }
 
 void
-fl_store_close(struct fl_store *store)
+ms_store_close(struct ms_store *store)
 {
     if (store == NULL)
         return;
@@ -164,7 +164,7 @@ fl_store_close(struct fl_store *store)
 }
 
 static bool
-bind_alert(sqlite3_stmt *statement, const struct fl_alert *alert)
+bind_alert(sqlite3_stmt *statement, const struct ms_alert *alert)
 {
     int index = 1;
 
@@ -186,7 +186,7 @@ bind_alert(sqlite3_stmt *statement, const struct fl_alert *alert)
 }
 
 bool
-fl_store_insert(struct fl_store *store, struct fl_alert *alert, struct fl_error *error)
+ms_store_insert(struct ms_store *store, struct ms_alert *alert, struct ms_error *error)
 {
     static const char sql[] =
         "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete)"
@@ -216,7 +216,7 @@ fl_store_insert(struct fl_store *store, struct fl_alert *alert, struct fl_error 
 
 static bool
 copy_column(sqlite3_stmt *statement, int column, char *destination, size_t capacity,
-            struct fl_error *error)
+            struct ms_error *error)
 {
     const unsigned char *text = sqlite3_column_text(statement, column);
     int length = sqlite3_column_bytes(statement, column);
@@ -232,13 +232,13 @@ copy_column(sqlite3_stmt *statement, int column, char *destination, size_t capac
 }
 
 static bool
-read_alert(sqlite3_stmt *statement, struct fl_alert *alert, struct fl_error *error)
+read_alert(sqlite3_stmt *statement, struct ms_alert *alert, struct ms_error *error)
 {
-    *alert = (struct fl_alert){
+    *alert = (struct ms_alert){
         .id = sqlite3_column_int64(statement, 0),
         .timestamp_utc = sqlite3_column_int64(statement, 1),
         .observed_boottime_ns = (uint64_t)sqlite3_column_int64(statement, 2),
-        .severity = (enum fl_severity)sqlite3_column_int(statement, 3),
+        .severity = (enum ms_severity)sqlite3_column_int(statement, 3),
         .pid = sqlite3_column_int(statement, 6),
         .ppid = sqlite3_column_int(statement, 7),
         .uid = (uid_t)sqlite3_column_int64(statement, 8),
@@ -255,31 +255,31 @@ read_alert(sqlite3_stmt *statement, struct fl_alert *alert, struct fl_error *err
 }
 
 void
-fl_alert_page_clear(struct fl_alert_page *page)
+ms_alert_page_clear(struct ms_alert_page *page)
 {
     if (page == NULL)
         return;
     free(page->items);
-    *page = (struct fl_alert_page){0};
+    *page = (struct ms_alert_page){0};
 }
 
 bool
-fl_store_list(struct fl_store *store, int64_t before_id, enum fl_severity minimum,
-              size_t limit, struct fl_alert_page *page, struct fl_error *error)
+ms_store_list(struct ms_store *store, int64_t before_id, enum ms_severity minimum,
+              size_t limit, struct ms_alert_page *page, struct ms_error *error)
 {
     static const char sql[] =
         "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete "
         "FROM alerts WHERE (?=0 OR id<?) AND severity>=? ORDER BY id DESC LIMIT ?";
     sqlite3_stmt *statement = NULL;
-    struct fl_alert_page result = {0};
+    struct ms_alert_page result = {0};
     int step;
 
     if (store == NULL || page == NULL || limit == 0) {
         set_error(error, "store_invalid", "store, page, and a nonzero limit are required");
         return false;
     }
-    if (limit > FL_STORE_MAX_PAGE)
-        limit = FL_STORE_MAX_PAGE;
+    if (limit > MS_STORE_MAX_PAGE)
+        limit = MS_STORE_MAX_PAGE;
     result.items = calloc(limit, sizeof *result.items);
     if (result.items == NULL) {
         set_error(error, "store_memory", "cannot allocate alert page");
@@ -292,13 +292,13 @@ fl_store_list(struct fl_store *store, int64_t before_id, enum fl_severity minimu
         sqlite3_bind_int64(statement, 4, (sqlite3_int64)limit) != SQLITE_OK) {
         set_error(error, "store_error", "%s", sqlite3_errmsg(store->database));
         sqlite3_finalize(statement);
-        fl_alert_page_clear(&result);
+        ms_alert_page_clear(&result);
         return false;
     }
     while ((step = sqlite3_step(statement)) == SQLITE_ROW) {
         if (!read_alert(statement, &result.items[result.length], error)) {
             sqlite3_finalize(statement);
-            fl_alert_page_clear(&result);
+            ms_alert_page_clear(&result);
             return false;
         }
         ++result.length;
@@ -306,20 +306,20 @@ fl_store_list(struct fl_store *store, int64_t before_id, enum fl_severity minimu
     if (step != SQLITE_DONE) {
         set_error(error, "store_error", "%s", sqlite3_errmsg(store->database));
         sqlite3_finalize(statement);
-        fl_alert_page_clear(&result);
+        ms_alert_page_clear(&result);
         return false;
     }
     sqlite3_finalize(statement);
     if (result.length > 0)
         result.next_before_id = result.items[result.length - 1].id;
-    fl_alert_page_clear(page);
+    ms_alert_page_clear(page);
     *page = result;
     return true;
 }
 
 size_t
-fl_store_prune_before(struct fl_store *store, int64_t utc_cutoff, size_t batch,
-                      struct fl_error *error)
+ms_store_prune_before(struct ms_store *store, int64_t utc_cutoff, size_t batch,
+                      struct ms_error *error)
 {
     static const char sql[] =
         "DELETE FROM alerts WHERE id IN (SELECT id FROM alerts WHERE timestamp_utc<? ORDER BY id LIMIT ?)";
@@ -331,8 +331,8 @@ fl_store_prune_before(struct fl_store *store, int64_t utc_cutoff, size_t batch,
         set_error(error, "store_invalid", "store and a nonzero batch are required");
         return 0;
     }
-    if (batch > FL_STORE_MAX_PRUNE_BATCH)
-        batch = FL_STORE_MAX_PRUNE_BATCH;
+    if (batch > MS_STORE_MAX_PRUNE_BATCH)
+        batch = MS_STORE_MAX_PRUNE_BATCH;
     if (!execute(store->database, "BEGIN IMMEDIATE", error))
         return 0;
     result = sqlite3_prepare_v2(store->database, sql, -1, &statement, NULL);

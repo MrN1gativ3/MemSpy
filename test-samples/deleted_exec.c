@@ -10,27 +10,28 @@ extern char **environ;
 int
 main(int argc, char **argv)
 {
+    char path[] = "/tmp/memspy-deleted-XXXXXX";
     char buffer[8192];
     ssize_t count;
     int source;
-    int memory;
+    int target;
 
     (void)argc;
-    if (getenv("FILELESS_FIXTURE_CHILD") != NULL) {
+    if (getenv("MEMSPY_FIXTURE_CHILD") != NULL) {
         usleep(300000);
         return 0;
     }
     source = open("/proc/self/exe", O_RDONLY);
-    memory = (int)syscall(SYS_memfd_create, "fileless-fixture", 0);
-    if (source < 0 || memory < 0)
+    target = mkstemp(path);
+    if (source < 0 || target < 0)
         return 1;
     while ((count = read(source, buffer, sizeof buffer)) > 0) {
-        if (write(memory, buffer, (size_t)count) != count)
+        if (write(target, buffer, (size_t)count) != count)
             return 1;
     }
-    if (count < 0 || fchmod(memory, 0700) != 0 || lseek(memory, 0, SEEK_SET) < 0)
+    if (count < 0 || fchmod(target, 0700) != 0 || unlink(path) != 0 || lseek(target, 0, SEEK_SET) < 0)
         return 1;
-    setenv("FILELESS_FIXTURE_CHILD", "1", 1);
-    syscall(SYS_execveat, memory, "", argv, environ, AT_EMPTY_PATH);
+    setenv("MEMSPY_FIXTURE_CHILD", "1", 1);
+    syscall(SYS_execveat, target, "", argv, environ, AT_EMPTY_PATH);
     return 1;
 }

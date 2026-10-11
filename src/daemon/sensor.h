@@ -1,30 +1,30 @@
-#ifndef FILELESS_SENSOR_H
-#define FILELESS_SENSOR_H
+#ifndef MEMSPY_SENSOR_H
+#define MEMSPY_SENSOR_H
 
 #include <stdbool.h>
 #include <stdint.h>
 
-#include "fileless/observation.h"
-#include "fileless_shared.h"
+#include "memspy/observation.h"
+#include "memspy_shared.h"
 
-typedef void (*fl_observation_cb)(const struct fl_observation *observation, void *userdata);
+typedef void (*ms_observation_cb)(const struct ms_observation *observation, void *userdata);
 
-struct fl_sensor_stats {
+struct ms_sensor_stats {
     uint64_t received_events;
     uint64_t lost_events;
     uint64_t invalid_events;
 };
 
-struct fl_sensor;
+struct ms_sensor;
 
-bool fl_sensor_open(struct fl_sensor **out, fl_observation_cb callback, void *userdata,
-                    struct fl_error *error);
-bool fl_sensor_attach(struct fl_sensor *sensor, struct fl_error *error);
-int fl_sensor_poll(struct fl_sensor *sensor, int timeout_ms, struct fl_error *error);
-void fl_sensor_stats(const struct fl_sensor *sensor, struct fl_sensor_stats *stats);
-void fl_sensor_free(struct fl_sensor *sensor);
-bool fl_sensor_observation_from_event(const struct fl_kernel_event *event,
-                                      struct fl_observation *observation,
-                                      struct fl_error *error);
+bool ms_sensor_open(struct ms_sensor **out, ms_observation_cb callback, void *userdata,
+                    struct ms_error *error);
+bool ms_sensor_attach(struct ms_sensor *sensor, struct ms_error *error);
+int ms_sensor_poll(struct ms_sensor *sensor, int timeout_ms, struct ms_error *error);
+void ms_sensor_stats(const struct ms_sensor *sensor, struct ms_sensor_stats *stats);
+void ms_sensor_free(struct ms_sensor *sensor);
+bool ms_sensor_observation_from_event(const struct ms_kernel_event *event,
+                                      struct ms_observation *observation,
+                                      struct ms_error *error);
 
 #endif

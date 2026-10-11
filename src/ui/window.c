@@ -4,11 +4,11 @@
 #include <string.h>
 
 struct alert_view {
-    struct fl_alert alert;
+    struct ms_alert alert;
     GtkWidget *row;
 };
 
-struct fl_window {
+struct ms_window {
     GtkWidget *window;
     GtkWidget *status_box;
     GtkWidget *status_label;
@@ -16,7 +16,7 @@ struct fl_window {
     GtkWidget *list;
     GtkWidget *filter_buttons[3];
     GPtrArray *alerts;
-    enum fl_ui_filter filter;
+    enum ms_ui_filter filter;
 };
 
 static void
@@ -28,20 +28,20 @@ add_class(GtkWidget *widget, const char *name)
 static gboolean
 filter_row(GtkListBoxRow *row, gpointer userdata)
 {
-    struct fl_window *window = userdata;
-    const struct alert_view *view = g_object_get_data(G_OBJECT(row), "fileless-alert");
-    if (window->filter == FL_UI_FILTER_ALL)
+    struct ms_window *window = userdata;
+    const struct alert_view *view = g_object_get_data(G_OBJECT(row), "memspy-alert");
+    if (window->filter == MS_UI_FILTER_ALL)
         return true;
-    if (window->filter == FL_UI_FILTER_HIGH)
-        return view->alert.severity == FL_SEVERITY_HIGH;
-    return view->alert.severity == FL_SEVERITY_MEDIUM;
+    if (window->filter == MS_UI_FILTER_HIGH)
+        return view->alert.severity == MS_SEVERITY_HIGH;
+    return view->alert.severity == MS_SEVERITY_MEDIUM;
 }
 
 static gint
 sort_rows(GtkListBoxRow *left, GtkListBoxRow *right, gpointer userdata)
 {
-    const struct alert_view *a = g_object_get_data(G_OBJECT(left), "fileless-alert");
-    const struct alert_view *b = g_object_get_data(G_OBJECT(right), "fileless-alert");
+    const struct alert_view *a = g_object_get_data(G_OBJECT(left), "memspy-alert");
+    const struct alert_view *b = g_object_get_data(G_OBJECT(right), "memspy-alert");
     (void)userdata;
     return a->alert.id < b->alert.id ? 1 : a->alert.id > b->alert.id ? -1 : 0;
 }
@@ -49,11 +49,11 @@ sort_rows(GtkListBoxRow *left, GtkListBoxRow *right, gpointer userdata)
 static void
 filter_toggled(GtkToggleButton *button, gpointer userdata)
 {
-    struct fl_window *window = userdata;
+    struct ms_window *window = userdata;
     if (!gtk_toggle_button_get_active(button))
         return;
-    window->filter = (enum fl_ui_filter)GPOINTER_TO_INT(
-        g_object_get_data(G_OBJECT(button), "fileless-filter"));
+    window->filter = (enum ms_ui_filter)GPOINTER_TO_INT(
+        g_object_get_data(G_OBJECT(button), "memspy-filter"));
     gtk_list_box_invalidate_filter(GTK_LIST_BOX(window->list));
 }
 
@@ -70,7 +70,7 @@ new_wrapping_label(const char *text)
 static GtkWidget *
 create_alert_row(struct alert_view *view)
 {
-    const char *severity = view->alert.severity == FL_SEVERITY_HIGH ? "High" : "Medium";
+    const char *severity = view->alert.severity == MS_SEVERITY_HIGH ? "High" : "Medium";
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -85,7 +85,7 @@ create_alert_row(struct alert_view *view)
 
     snprintf(process_text, sizeof process_text, "%s · PID %d", view->alert.comm, view->alert.pid);
     process = new_wrapping_label(process_text);
-    add_class(rule_label, "fileless-rule-id");
+    add_class(rule_label, "memspy-rule-id");
     gtk_label_set_xalign(GTK_LABEL(severity_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(rule_label), 0.0F);
     gtk_box_pack_start(GTK_BOX(heading), severity_label, false, false, 0);
@@ -100,17 +100,17 @@ create_alert_row(struct alert_view *view)
     gtk_label_set_selectable(GTK_LABEL(exe), true);
     gtk_label_set_selectable(GTK_LABEL(cmdline), true);
     gtk_label_set_selectable(GTK_LABEL(evidence), true);
-    add_class(exe, "fileless-rule-id");
-    add_class(cmdline, "fileless-rule-id");
+    add_class(exe, "memspy-rule-id");
+    add_class(cmdline, "memspy-rule-id");
     gtk_box_pack_start(GTK_BOX(details), exe, false, false, 0);
     gtk_box_pack_start(GTK_BOX(details), cmdline, false, false, 0);
     gtk_box_pack_start(GTK_BOX(details), evidence, false, false, 0);
     gtk_container_add(GTK_CONTAINER(expander), details);
     gtk_box_pack_start(GTK_BOX(content), expander, false, false, 0);
     gtk_container_add(GTK_CONTAINER(row), content);
-    add_class(row, "fileless-alert-row");
-    add_class(row, view->alert.severity == FL_SEVERITY_HIGH ?
-              "fileless-health-high" : "fileless-health-medium");
+    add_class(row, "memspy-alert-row");
+    add_class(row, view->alert.severity == MS_SEVERITY_HIGH ?
+              "memspy-health-high" : "memspy-health-medium");
     snprintf(accessible_name, sizeof accessible_name, "%s alert, %s, process %s",
              severity, view->alert.rule_id, view->alert.comm);
     atk_object_set_name(gtk_widget_get_accessible(row), accessible_name);
@@ -118,7 +118,7 @@ create_alert_row(struct alert_view *view)
 }
 
 static GtkWidget *
-create_filters(struct fl_window *window)
+create_filters(struct ms_window *window)
 {
     static const char *labels[] = {"All", "High", "Medium"};
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
@@ -126,7 +126,7 @@ create_filters(struct fl_window *window)
     for (unsigned int index = 0; index < 3; ++index) {
         GtkWidget *button = gtk_radio_button_new_with_label(group, labels[index]);
         group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
-        g_object_set_data(G_OBJECT(button), "fileless-filter", GINT_TO_POINTER(index));
+        g_object_set_data(G_OBJECT(button), "memspy-filter", GINT_TO_POINTER(index));
         g_signal_connect(button, "toggled", G_CALLBACK(filter_toggled), window);
         gtk_box_pack_start(GTK_BOX(box), button, false, false, 0);
         window->filter_buttons[index] = button;
@@ -136,10 +136,10 @@ create_filters(struct fl_window *window)
     return box;
 }
 
-struct fl_window *
-fl_window_new(GtkApplication *application)
+struct ms_window *
+ms_window_new(GtkApplication *application)
 {
-    struct fl_window *window = g_new0(struct fl_window, 1);
+    struct ms_window *window = g_new0(struct ms_window, 1);
     GtkWidget *root = gtk_box_new(GTK_ORIENTATION_VERTICAL, 12);
     GtkWidget *filters;
     GtkWidget *scroller = gtk_scrolled_window_new(NULL, NULL);
@@ -149,14 +149,14 @@ fl_window_new(GtkApplication *application)
     window->window = application == NULL ? gtk_window_new(GTK_WINDOW_TOPLEVEL) :
         gtk_application_window_new(application);
     window->alerts = g_ptr_array_new_with_free_func(g_free);
-    window->filter = FL_UI_FILTER_ALL;
-    gtk_window_set_title(GTK_WINDOW(window->window), "Fileless Detector");
+    window->filter = MS_UI_FILTER_ALL;
+    gtk_window_set_title(GTK_WINDOW(window->window), "MemSpy");
     gtk_window_set_default_size(GTK_WINDOW(window->window), 440, 560);
     gtk_window_set_titlebar(GTK_WINDOW(window->window), header);
-    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "Fileless Detector");
+    gtk_header_bar_set_title(GTK_HEADER_BAR(header), "MemSpy");
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), true);
     atk_object_set_name(gtk_widget_get_accessible(window->window), "Fileless malware alerts");
-    add_class(window->window, "fileless-window");
+    add_class(window->window, "memspy-window");
 
     window->status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     window->spinner = gtk_spinner_new();
@@ -164,7 +164,7 @@ fl_window_new(GtkApplication *application)
     gtk_label_set_xalign(GTK_LABEL(window->status_label), 0.0F);
     gtk_box_pack_start(GTK_BOX(window->status_box), window->spinner, false, false, 0);
     gtk_box_pack_start(GTK_BOX(window->status_box), window->status_label, true, true, 0);
-    add_class(window->status_box, "fileless-status-banner");
+    add_class(window->status_box, "memspy-status-banner");
     atk_object_set_name(gtk_widget_get_accessible(window->status_box), "Detector status");
 
     filters = create_filters(window);
@@ -183,34 +183,34 @@ fl_window_new(GtkApplication *application)
     gtk_box_pack_start(GTK_BOX(root), scroller, true, true, 0);
     gtk_container_set_border_width(GTK_CONTAINER(root), 12);
     gtk_container_add(GTK_CONTAINER(window->window), root);
-    fl_window_set_loading(window);
+    ms_window_set_loading(window);
     gtk_widget_show_all(root);
     return window;
 }
 
 GtkWindow *
-fl_window_widget(struct fl_window *window)
+ms_window_widget(struct ms_window *window)
 {
     return window == NULL ? NULL : GTK_WINDOW(window->window);
 }
 
 void
-fl_window_set_loading(struct fl_window *window)
+ms_window_set_loading(struct ms_window *window)
 {
     if (window == NULL)
         return;
     gtk_label_set_text(GTK_LABEL(window->status_label), "Connecting to detector…");
     gtk_spinner_start(GTK_SPINNER(window->spinner));
-    add_class(window->status_box, "fileless-health-offline");
+    add_class(window->status_box, "memspy-health-offline");
 }
 
 static void
-set_status(struct fl_window *window, const char *text, const char *style)
+set_status(struct ms_window *window, const char *text, const char *style)
 {
     GtkStyleContext *context = gtk_widget_get_style_context(window->status_box);
     static const char *classes[] = {
-        "fileless-health-healthy", "fileless-health-medium",
-        "fileless-health-high", "fileless-health-offline",
+        "memspy-health-healthy", "memspy-health-medium",
+        "memspy-health-high", "memspy-health-offline",
     };
     for (unsigned int index = 0; index < G_N_ELEMENTS(classes); ++index)
         gtk_style_context_remove_class(context, classes[index]);
@@ -220,34 +220,34 @@ set_status(struct fl_window *window, const char *text, const char *style)
 }
 
 void
-fl_window_set_health(struct fl_window *window, const struct fl_health *health)
+ms_window_set_health(struct ms_window *window, const struct ms_health *health)
 {
     if (window == NULL || health == NULL)
         return;
-    if (health->state == FL_HEALTH_HEALTHY && health->protected)
-        set_status(window, "Monitoring active", "fileless-health-healthy");
-    else if (health->state == FL_HEALTH_FAILED)
-        set_status(window, "Monitoring failed", "fileless-health-offline");
+    if (health->state == MS_HEALTH_HEALTHY && health->protected)
+        set_status(window, "Monitoring active", "memspy-health-healthy");
+    else if (health->state == MS_HEALTH_FAILED)
+        set_status(window, "Monitoring failed", "memspy-health-offline");
     else
-        set_status(window, "Monitoring degraded", "fileless-health-medium");
+        set_status(window, "Monitoring degraded", "memspy-health-medium");
 }
 
 void
-fl_window_set_offline(struct fl_window *window, const char *message)
+ms_window_set_offline(struct ms_window *window, const char *message)
 {
     if (window != NULL)
         set_status(window, message == NULL ? "Detector unavailable" : message,
-                   "fileless-health-offline");
+                   "memspy-health-offline");
 }
 
 const char *
-fl_window_status_text(const struct fl_window *window)
+ms_window_status_text(const struct ms_window *window)
 {
     return window == NULL ? NULL : gtk_label_get_text(GTK_LABEL(window->status_label));
 }
 
 bool
-fl_window_add_alert(struct fl_window *window, const struct fl_alert *alert)
+ms_window_add_alert(struct ms_window *window, const struct ms_alert *alert)
 {
     struct alert_view *view;
     if (window == NULL || alert == NULL || alert->id < 0 ||
@@ -264,7 +264,7 @@ fl_window_add_alert(struct fl_window *window, const struct fl_alert *alert)
     view = g_new0(struct alert_view, 1);
     view->alert = *alert;
     view->row = create_alert_row(view);
-    g_object_set_data(G_OBJECT(view->row), "fileless-alert", view);
+    g_object_set_data(G_OBJECT(view->row), "memspy-alert", view);
     g_ptr_array_add(window->alerts, view);
     gtk_container_add(GTK_CONTAINER(window->list), view->row);
     gtk_widget_show_all(view->row);
@@ -274,9 +274,9 @@ fl_window_add_alert(struct fl_window *window, const struct fl_alert *alert)
 }
 
 void
-fl_window_set_filter(struct fl_window *window, enum fl_ui_filter filter)
+ms_window_set_filter(struct ms_window *window, enum ms_ui_filter filter)
 {
-    if (window == NULL || filter < FL_UI_FILTER_ALL || filter > FL_UI_FILTER_MEDIUM)
+    if (window == NULL || filter < MS_UI_FILTER_ALL || filter > MS_UI_FILTER_MEDIUM)
         return;
     window->filter = filter;
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(window->filter_buttons[filter]), true);
@@ -284,30 +284,30 @@ fl_window_set_filter(struct fl_window *window, enum fl_ui_filter filter)
 }
 
 size_t
-fl_window_visible_count(const struct fl_window *window)
+ms_window_visible_count(const struct ms_window *window)
 {
     size_t count = 0;
     if (window == NULL)
         return 0;
     for (guint index = 0; index < window->alerts->len; ++index) {
         const struct alert_view *view = g_ptr_array_index(window->alerts, index);
-        if (window->filter == FL_UI_FILTER_ALL ||
-            (window->filter == FL_UI_FILTER_HIGH && view->alert.severity == FL_SEVERITY_HIGH) ||
-            (window->filter == FL_UI_FILTER_MEDIUM && view->alert.severity == FL_SEVERITY_MEDIUM))
+        if (window->filter == MS_UI_FILTER_ALL ||
+            (window->filter == MS_UI_FILTER_HIGH && view->alert.severity == MS_SEVERITY_HIGH) ||
+            (window->filter == MS_UI_FILTER_MEDIUM && view->alert.severity == MS_SEVERITY_MEDIUM))
             ++count;
     }
     return count;
 }
 
 bool
-fl_window_select_alert(struct fl_window *window, int64_t alert_id)
+ms_window_select_alert(struct ms_window *window, int64_t alert_id)
 {
     if (window == NULL)
         return false;
     for (guint index = 0; index < window->alerts->len; ++index) {
         const struct alert_view *view = g_ptr_array_index(window->alerts, index);
         if (view->alert.id == alert_id) {
-            fl_window_set_filter(window, FL_UI_FILTER_ALL);
+            ms_window_set_filter(window, MS_UI_FILTER_ALL);
             gtk_list_box_select_row(GTK_LIST_BOX(window->list), GTK_LIST_BOX_ROW(view->row));
             gtk_widget_grab_focus(view->row);
             return true;
@@ -317,7 +317,7 @@ fl_window_select_alert(struct fl_window *window, int64_t alert_id)
 }
 
 void
-fl_window_present(struct fl_window *window)
+ms_window_present(struct ms_window *window)
 {
     if (window == NULL)
         return;
@@ -326,7 +326,7 @@ fl_window_present(struct fl_window *window)
 }
 
 void
-fl_window_free(struct fl_window *window)
+ms_window_free(struct ms_window *window)
 {
     if (window == NULL)
         return;

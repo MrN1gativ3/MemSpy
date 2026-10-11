@@ -1,4 +1,4 @@
-#include "fileless/alert.h"
+#include "memspy/alert.h"
 
 #include <glib.h>
 #include <limits.h>
@@ -7,7 +7,7 @@
 #include <string.h>
 
 static void
-set_error(struct fl_error *error, const char *code, const char *format, ...)
+set_error(struct ms_error *error, const char *code, const char *format, ...)
 {
     va_list args;
 
@@ -20,12 +20,12 @@ set_error(struct fl_error *error, const char *code, const char *format, ...)
 }
 
 static const char *
-severity_name(enum fl_severity severity)
+severity_name(enum ms_severity severity)
 {
     switch (severity) {
-    case FL_SEVERITY_MEDIUM:
+    case MS_SEVERITY_MEDIUM:
         return "medium";
-    case FL_SEVERITY_HIGH:
+    case MS_SEVERITY_HIGH:
         return "high";
     }
     return NULL;
@@ -47,7 +47,7 @@ add_string(json_object *object, const char *name, const char *value, size_t capa
 }
 
 json_object *
-fl_alert_to_json(const struct fl_alert *alert)
+ms_alert_to_json(const struct ms_alert *alert)
 {
     const char *severity;
     json_object *object;
@@ -81,7 +81,7 @@ fl_alert_to_json(const struct fl_alert *alert)
 
 static bool
 get_required(json_object *parent, const char *name, enum json_type type,
-             json_object **value, struct fl_error *error)
+             json_object **value, struct ms_error *error)
 {
     if (!json_object_object_get_ex(parent, name, value) || json_object_get_type(*value) != type) {
         set_error(error, "invalid_alert", "field '%s' is missing or has the wrong type", name);
@@ -92,7 +92,7 @@ get_required(json_object *parent, const char *name, enum json_type type,
 
 static bool
 copy_string(json_object *parent, const char *name, char *destination, size_t capacity,
-            struct fl_error *error)
+            struct ms_error *error)
 {
     json_object *value;
     const char *text;
@@ -113,7 +113,7 @@ copy_string(json_object *parent, const char *name, char *destination, size_t cap
 
 static bool
 get_nonnegative_int(json_object *parent, const char *name, int64_t maximum,
-                    int64_t *output, struct fl_error *error)
+                    int64_t *output, struct ms_error *error)
 {
     json_object *value;
     int64_t number;
@@ -130,7 +130,7 @@ get_nonnegative_int(json_object *parent, const char *name, int64_t maximum,
 }
 
 static bool
-get_uint64(json_object *parent, const char *name, uint64_t *output, struct fl_error *error)
+get_uint64(json_object *parent, const char *name, uint64_t *output, struct ms_error *error)
 {
     json_object *value;
 
@@ -145,9 +145,9 @@ get_uint64(json_object *parent, const char *name, uint64_t *output, struct fl_er
 }
 
 bool
-fl_alert_from_json(json_object *json, struct fl_alert *alert, struct fl_error *error)
+ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *error)
 {
-    struct fl_alert parsed = {0};
+    struct ms_alert parsed = {0};
     json_object *value;
     const char *severity;
     int64_t number;
@@ -165,9 +165,9 @@ fl_alert_from_json(json_object *json, struct fl_alert *alert, struct fl_error *e
         return false;
     severity = json_object_get_string(value);
     if (strcmp(severity, "medium") == 0)
-        parsed.severity = FL_SEVERITY_MEDIUM;
+        parsed.severity = MS_SEVERITY_MEDIUM;
     else if (strcmp(severity, "high") == 0)
-        parsed.severity = FL_SEVERITY_HIGH;
+        parsed.severity = MS_SEVERITY_HIGH;
     else {
         set_error(error, "invalid_alert", "field 'severity' is invalid");
         return false;
@@ -198,6 +198,6 @@ fl_alert_from_json(json_object *json, struct fl_alert *alert, struct fl_error *e
 
     *alert = parsed;
     if (error != NULL)
-        *error = (struct fl_error){0};
+        *error = (struct ms_error){0};
     return true;
 }

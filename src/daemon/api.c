@@ -14,21 +14,21 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-#define FL_API_MAX_SESSIONS 64U
-#define FL_API_REQUEST_TIMEOUT_MS 5000
+#define MS_API_MAX_SESSIONS 64U
+#define MS_API_REQUEST_TIMEOUT_MS 5000
 
-struct fl_session {
-    struct fl_api *api;
+struct ms_session {
+    struct ms_api *api;
     int descriptor;
     GMutex write_mutex;
     bool subscribed;
 };
 
-struct fl_api {
+struct ms_api {
     char *socket_path;
-    struct fl_store *store;
-    struct fl_api_callbacks callbacks;
-    struct fl_health health;
+    struct ms_store *store;
+    struct ms_api_callbacks callbacks;
+    struct ms_health health;
     int listener;
     GThread *accept_thread;
     GMutex mutex;
@@ -39,7 +39,7 @@ struct fl_api {
 };
 
 static void
-set_error(struct fl_error *error, const char *code, const char *format, ...)
+set_error(struct ms_error *error, const char *code, const char *format, ...)
 {
     va_list args;
     if (error == NULL)
@@ -73,7 +73,7 @@ send_json(int descriptor, json_object *object)
 }
 
 static bool
-session_send_json(struct fl_session *session, json_object *object)
+session_send_json(struct ms_session *session, json_object *object)
 {
     bool sent;
     g_mutex_lock(&session->write_mutex);
@@ -83,7 +83,7 @@ session_send_json(struct fl_session *session, json_object *object)
 }
 
 static bool
-session_publish_json(struct fl_session *session, json_object *object)
+session_publish_json(struct ms_session *session, json_object *object)
 {
     struct pollfd descriptor = {.fd = session->descriptor, .events = POLLOUT};
     if (poll(&descriptor, 1, 0) != 1 || (descriptor.revents & POLLOUT) == 0)
@@ -95,7 +95,7 @@ static void
 send_error(int descriptor, const char *code)
 {
     json_object *reply = json_object_new_object();
-    json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+    json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(reply, "ok", json_object_new_boolean(false));
     json_object_object_add(reply, "error", json_object_new_string(code));
     send_json(descriptor, reply);
@@ -108,7 +108,7 @@ read_line(int descriptor, char *buffer, int timeout_ms)
     const gint64 deadline = timeout_ms < 0 ? 0 :
         g_get_monotonic_time() + (gint64)timeout_ms * G_TIME_SPAN_MILLISECOND;
     size_t used = 0;
-    while (used <= FL_MAX_MESSAGE_BYTES) {
+    while (used <= MS_MAX_MESSAGE_BYTES) {
         if (timeout_ms >= 0) {
             gint64 remaining = deadline - g_get_monotonic_time();
             struct pollfd ready = {.fd = descriptor, .events = POLLIN};
@@ -174,11 +174,11 @@ request_version(json_object *request, int *version)
 }
 
 static void
-handle_status(struct fl_session *session)
+handle_status(struct ms_session *session)
 {
     json_object *reply = json_object_new_object();
     json_object *health = json_object_new_object();
-    struct fl_health snapshot;
+    struct ms_health snapshot;
 
     g_mutex_lock(&session->api->mutex);
     snapshot = session->api->health;
@@ -190,7 +190,7 @@ handle_status(struct fl_session *session)
     json_object_object_add(health, "dropped_alerts", json_object_new_uint64(snapshot.dropped_alerts));
     json_object_object_add(health, "storage_available", json_object_new_boolean(snapshot.storage_available));
     json_object_object_add(health, "message", json_object_new_string(snapshot.message));
-    json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+    json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(reply, "ok", json_object_new_boolean(true));
     json_object_object_add(reply, "health", health);
     session_send_json(session, reply);
@@ -198,15 +198,15 @@ handle_status(struct fl_session *session)
 }
 
 static void
-handle_alerts(struct fl_session *session, json_object *request)
+handle_alerts(struct ms_session *session, json_object *request)
 {
     json_object *field;
     int64_t before = 0;
-    int minimum = FL_SEVERITY_MEDIUM;
+    int minimum = MS_SEVERITY_MEDIUM;
     size_t limit = 100;
-    struct fl_alert_page page = {0};
-    struct fl_error error = {0};
-    struct fl_store *store;
+    struct ms_alert_page page = {0};
+    struct ms_error error = {0};
+    struct ms_store *store;
     json_object *reply;
     json_object *items;
 
@@ -227,8 +227,8 @@ handle_alerts(struct fl_session *session, json_object *request)
     }
     if (json_object_object_get_ex(request, "minimum", &field)) {
         if (json_object_get_type(field) != json_type_int ||
-            (json_object_get_int(field) != FL_SEVERITY_MEDIUM &&
-             json_object_get_int(field) != FL_SEVERITY_HIGH)) {
+            (json_object_get_int(field) != MS_SEVERITY_MEDIUM &&
+             json_object_get_int(field) != MS_SEVERITY_HIGH)) {
             send_error(session->descriptor, "invalid_request");
             return;
         }
@@ -241,33 +241,33 @@ handle_alerts(struct fl_session *session, json_object *request)
         }
         limit = (size_t)json_object_get_uint64(field);
     }
-    if (!fl_store_list(store, before, (enum fl_severity)minimum, limit, &page, &error)) {
+    if (!ms_store_list(store, before, (enum ms_severity)minimum, limit, &page, &error)) {
         send_error(session->descriptor, error.code);
         return;
     }
     reply = json_object_new_object();
     items = json_object_new_array_ext((int)page.length);
     for (size_t index = 0; index < page.length; ++index)
-        json_object_array_add(items, fl_alert_to_json(&page.items[index]));
-    json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+        json_object_array_add(items, ms_alert_to_json(&page.items[index]));
+    json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(reply, "ok", json_object_new_boolean(true));
     json_object_object_add(reply, "alerts", items);
     json_object_object_add(reply, "next_before_id", json_object_new_int64(page.next_before_id));
     session_send_json(session, reply);
     json_object_put(reply);
-    fl_alert_page_clear(&page);
+    ms_alert_page_clear(&page);
 }
 
 static gpointer
 client_worker(gpointer data)
 {
-    struct fl_session *session = data;
-    char *line = g_malloc(FL_MAX_MESSAGE_BYTES + 2U);
+    struct ms_session *session = data;
+    char *line = g_malloc(MS_MAX_MESSAGE_BYTES + 2U);
     bool handshaken = false;
     ssize_t length;
 
     while ((length = read_line(session->descriptor, line,
-                               session->subscribed ? -1 : FL_API_REQUEST_TIMEOUT_MS)) > 0) {
+                               session->subscribed ? -1 : MS_API_REQUEST_TIMEOUT_MS)) > 0) {
         json_object *request = parse_request(line);
         const char *operation;
         int version;
@@ -281,7 +281,7 @@ client_worker(gpointer data)
             json_object_put(request);
             break;
         }
-        if (version != FL_PROTOCOL_VERSION) {
+        if (version != MS_PROTOCOL_VERSION) {
             send_error(session->descriptor, "unsupported_version");
             json_object_put(request);
             break;
@@ -292,7 +292,7 @@ client_worker(gpointer data)
                 break;
             }
             json_object *reply = json_object_new_object();
-            json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+            json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
             json_object_object_add(reply, "ok", json_object_new_boolean(true));
             json_object_object_add(reply, "daemon_version", json_object_new_string("0.1.0"));
             send_json(session->descriptor, reply);
@@ -304,7 +304,7 @@ client_worker(gpointer data)
             handle_alerts(session, request);
         } else if (strcmp(operation, "subscribe") == 0) {
             json_object *reply = json_object_new_object();
-            json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+            json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
             json_object_object_add(reply, "ok", json_object_new_boolean(true));
             g_mutex_lock(&session->api->mutex);
             session->subscribed = true;
@@ -333,7 +333,7 @@ client_worker(gpointer data)
 static gpointer
 accept_worker(gpointer data)
 {
-    struct fl_api *api = data;
+    struct ms_api *api = data;
     while (true) {
         int descriptor = accept(api->listener, NULL, NULL);
         if (descriptor < 0) {
@@ -341,7 +341,7 @@ accept_worker(gpointer data)
                 continue;
             break;
         }
-        if (!fl_api_accept_fd(api, descriptor)) {
+        if (!ms_api_accept_fd(api, descriptor)) {
             close(descriptor);
             break;
         }
@@ -350,9 +350,9 @@ accept_worker(gpointer data)
 }
 
 bool
-fl_api_accept_fd(struct fl_api *api, int connected_fd)
+ms_api_accept_fd(struct ms_api *api, int connected_fd)
 {
-    struct fl_session *session;
+    struct ms_session *session;
     struct ucred credentials;
     const struct timeval send_timeout = {.tv_usec = 100000};
     socklen_t credentials_size = sizeof credentials;
@@ -373,12 +373,12 @@ fl_api_accept_fd(struct fl_api *api, int connected_fd)
         if (api->listener >= 0 || errno != EPERM)
             return false;
     }
-    session = g_new0(struct fl_session, 1);
+    session = g_new0(struct ms_session, 1);
     session->api = api;
     session->descriptor = connected_fd;
     g_mutex_init(&session->write_mutex);
     g_mutex_lock(&api->mutex);
-    if (api->stopping || api->sessions->len >= FL_API_MAX_SESSIONS) {
+    if (api->stopping || api->sessions->len >= MS_API_MAX_SESSIONS) {
         g_mutex_unlock(&api->mutex);
         g_mutex_clear(&session->write_mutex);
         g_free(session);
@@ -388,18 +388,18 @@ fl_api_accept_fd(struct fl_api *api, int connected_fd)
     g_mutex_unlock(&api->mutex);
     if (api->callbacks.peer_connected != NULL)
         api->callbacks.peer_connected(credentials.pid, credentials.uid, api->callbacks.userdata);
-    g_thread_unref(g_thread_new("fileless-api-client", client_worker, session));
+    g_thread_unref(g_thread_new("memspy-api-client", client_worker, session));
     return true;
 }
 
-struct fl_api *
-fl_api_new(const char *socket_path, struct fl_store *store,
-           const struct fl_api_callbacks *callbacks)
+struct ms_api *
+ms_api_new(const char *socket_path, struct ms_store *store,
+           const struct ms_api_callbacks *callbacks)
 {
-    struct fl_api *api;
+    struct ms_api *api;
     if (socket_path == NULL)
         return NULL;
-    api = g_new0(struct fl_api, 1);
+    api = g_new0(struct ms_api, 1);
     api->socket_path = g_strdup(socket_path);
     api->store = store;
     api->listener = -1;
@@ -412,7 +412,7 @@ fl_api_new(const char *socket_path, struct fl_store *store,
 }
 
 void
-fl_api_set_store(struct fl_api *api, struct fl_store *store)
+ms_api_set_store(struct ms_api *api, struct ms_store *store)
 {
     if (api == NULL)
         return;
@@ -422,7 +422,7 @@ fl_api_set_store(struct fl_api *api, struct fl_store *store)
 }
 
 bool
-fl_api_start(struct fl_api *api, struct fl_error *error)
+ms_api_start(struct ms_api *api, struct ms_error *error)
 {
     struct sockaddr_un address = {.sun_family = AF_UNIX};
     struct stat metadata;
@@ -470,12 +470,12 @@ fl_api_start(struct fl_api *api, struct fl_error *error)
         api->owns_socket = false;
         return false;
     }
-    api->accept_thread = g_thread_new("fileless-api", accept_worker, api);
+    api->accept_thread = g_thread_new("memspy-api", accept_worker, api);
     return true;
 }
 
 void
-fl_api_publish_health(struct fl_api *api, const struct fl_health *health)
+ms_api_publish_health(struct ms_api *api, const struct ms_health *health)
 {
     json_object *message;
     json_object *object;
@@ -492,11 +492,11 @@ fl_api_publish_health(struct fl_api *api, const struct fl_health *health)
     json_object_object_add(object, "dropped_alerts", json_object_new_uint64(health->dropped_alerts));
     json_object_object_add(object, "storage_available", json_object_new_boolean(health->storage_available));
     json_object_object_add(object, "message", json_object_new_string(health->message));
-    json_object_object_add(message, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+    json_object_object_add(message, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(message, "event", json_object_new_string("health"));
     json_object_object_add(message, "health", object);
     for (guint index = 0; index < api->sessions->len; ++index) {
-        struct fl_session *session = g_ptr_array_index(api->sessions, index);
+        struct ms_session *session = g_ptr_array_index(api->sessions, index);
         if (session->subscribed && !session_publish_json(session, message))
             shutdown(session->descriptor, SHUT_RDWR);
     }
@@ -505,18 +505,18 @@ fl_api_publish_health(struct fl_api *api, const struct fl_health *health)
 }
 
 void
-fl_api_publish_alert(struct fl_api *api, const struct fl_alert *alert)
+ms_api_publish_alert(struct ms_api *api, const struct ms_alert *alert)
 {
     json_object *message;
     if (api == NULL || alert == NULL)
         return;
     message = json_object_new_object();
-    json_object_object_add(message, "v", json_object_new_int(FL_PROTOCOL_VERSION));
+    json_object_object_add(message, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(message, "event", json_object_new_string("alert"));
-    json_object_object_add(message, "alert", fl_alert_to_json(alert));
+    json_object_object_add(message, "alert", ms_alert_to_json(alert));
     g_mutex_lock(&api->mutex);
     for (guint index = 0; index < api->sessions->len; ++index) {
-        struct fl_session *session = g_ptr_array_index(api->sessions, index);
+        struct ms_session *session = g_ptr_array_index(api->sessions, index);
         if (session->subscribed && !session_publish_json(session, message))
             shutdown(session->descriptor, SHUT_RDWR);
     }
@@ -525,7 +525,7 @@ fl_api_publish_alert(struct fl_api *api, const struct fl_alert *alert)
 }
 
 void
-fl_api_free(struct fl_api *api)
+ms_api_free(struct ms_api *api)
 {
     if (api == NULL)
         return;
@@ -534,7 +534,7 @@ fl_api_free(struct fl_api *api)
     if (api->listener >= 0)
         shutdown(api->listener, SHUT_RDWR);
     for (guint index = 0; index < api->sessions->len; ++index) {
-        struct fl_session *session = g_ptr_array_index(api->sessions, index);
+        struct ms_session *session = g_ptr_array_index(api->sessions, index);
         shutdown(session->descriptor, SHUT_RDWR);
     }
     g_mutex_unlock(&api->mutex);

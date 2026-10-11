@@ -1,5 +1,5 @@
 project(
-  'fileless-detector',
+  'memspy',
   'c',
   version: '0.1.0',
   default_options: ['c_std=c17', 'warning_level=3', 'werror=true', 'b_pie=true'],
@@ -24,20 +24,20 @@ clang = find_program('clang')
 bpftool = find_program('bpftool')
 
 bpf_object = custom_target(
-  'fileless-bpf',
-  input: 'src/bpf/fileless.bpf.c',
-  output: 'fileless.bpf.o',
+  'memspy-bpf',
+  input: 'src/bpf/memspy.bpf.c',
+  output: 'memspy.bpf.o',
   command: [clang, '-g', '-O2', '-target', 'bpf', '-D__TARGET_ARCH_x86',
             '-I/usr/include/' + host_machine.cpu_family() + '-linux-gnu',
             '-I' + meson.current_source_dir() / 'src/bpf', '-c', '@INPUT@', '-o', '@OUTPUT@'],
   install: true,
-  install_dir: get_option('libexecdir') / 'filelessd',
+  install_dir: get_option('libexecdir') / 'memspy',
 )
 
 bpf_skeleton = custom_target(
-  'fileless-bpf-skeleton',
+  'memspy-bpf-skeleton',
   input: bpf_object,
-  output: 'fileless.skel.h',
+  output: 'memspy.skel.h',
   command: [bpftool, 'gen', 'skeleton', '@INPUT@'],
   capture: true,
 )
@@ -56,8 +56,8 @@ daemon_sources = [
   'src/common/alert_json.c',
 ]
 
-filelessd = executable(
-  'filelessd',
+memspyd = executable(
+  'memspyd',
   daemon_sources,
   bpf_skeleton,
   include_directories: [inc, include_directories('src/daemon'), include_directories('src/bpf'), include_directories('.')],
@@ -67,8 +67,8 @@ filelessd = executable(
   install: true,
 )
 
-fileless_ui = executable(
-  'fileless-ui',
+memspy_ui = executable(
+  'memspy-ui',
   'src/ui/main.c',
   'src/ui/state.c',
   'src/ui/client.c',
@@ -83,28 +83,32 @@ fileless_ui = executable(
   install: true,
 )
 
-install_data('config/allowlist.conf', install_dir: get_option('sysconfdir') / 'filelessd')
-install_data('data/fileless-ui.css', install_dir: get_option('datadir') / 'fileless-detector')
-install_data('packaging/common/filelessd.service',
+install_data('config/allowlist.conf', install_dir: get_option('sysconfdir') / 'memspy')
+install_data('packaging/common/migrate-legacy.sh',
+             install_dir: get_option('libexecdir') / 'memspy',
+             install_mode: 'rwxr-xr-x',
+             rename: 'migrate-legacy')
+install_data('data/memspy-ui.css', install_dir: get_option('datadir') / 'memspy')
+install_data('packaging/common/memspyd.service',
              install_dir: get_option('prefix') / 'lib/systemd/system')
-install_data('packaging/common/filelessd.tmpfiles',
+install_data('packaging/common/memspyd.tmpfiles',
              install_dir: get_option('prefix') / 'lib/tmpfiles.d',
-             rename: 'filelessd.conf')
-install_data('packaging/common/filelessd.sysusers',
+             rename: 'memspyd.conf')
+install_data('packaging/common/memspyd.sysusers',
              install_dir: get_option('prefix') / 'lib/sysusers.d',
-             rename: 'filelessd.conf')
-install_data('packaging/common/org.fileless.DetectorUI.desktop',
+             rename: 'memspyd.conf')
+install_data('packaging/common/org.memspy.MemSpyUI.desktop',
              install_dir: get_option('datadir') / 'applications')
-install_data('packaging/common/org.fileless.DetectorUI-autostart.desktop',
+install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',
              install_dir: get_option('sysconfdir') / 'xdg/autostart',
-             rename: 'org.fileless.DetectorUI.desktop')
+             rename: 'org.memspy.MemSpyUI.desktop')
 install_data(
-  'data/icons/fileless-healthy-symbolic.svg',
-  'data/icons/fileless-medium-symbolic.svg',
-  'data/icons/fileless-high-symbolic.svg',
-  'data/icons/fileless-offline-symbolic.svg',
+  'data/icons/memspy-healthy-symbolic.svg',
+  'data/icons/memspy-medium-symbolic.svg',
+  'data/icons/memspy-high-symbolic.svg',
+  'data/icons/memspy-offline-symbolic.svg',
   install_dir: get_option('datadir') / 'icons/hicolor/scalable/status',
 )
-install_man('docs/filelessd.8', 'docs/fileless-ui.1')
+install_man('docs/memspyd.8', 'docs/memspy-ui.1')
 
 subdir('tests')

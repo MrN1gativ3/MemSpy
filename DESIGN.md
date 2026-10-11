@@ -1,6 +1,6 @@
 ---
 version: alpha
-name: "Fileless Detector"
+name: "MemSpy"
 description: "A compact GTK security alert surface for GNOME and KDE Plasma with an evidence-rail signature."
 colors:
   accent: "#3584E4"
@@ -38,7 +38,7 @@ components:
   indicator-menu: {}
 ---
 
-# Fileless Detector Design System
+# MemSpy Design System
 
 ## Overview
 
@@ -56,7 +56,7 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 - **Memorable signature:** The alert evidence rail pairs semantic color with an explicit High or Medium label and rule ID.
 - **Restraint:** Window chrome, typography, focus, menus, buttons, scrolling, and disclosure behavior remain GTK native; Plasma uses the host GTK theme bridge.
 - **Anti-references:** No SOC wallboard, neon terminal, card-grid SaaS dashboard, charts, gradients, glass effects, or red-dominant background. Those styles exaggerate activity and obscure local health.
-- **Token ownership/runtime mapping:** `data/fileless-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
+- **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
 
 The canonical capability owners are GTK native controls for buttons, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface; and `src/ui/indicator.c` for the panel menu. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
 

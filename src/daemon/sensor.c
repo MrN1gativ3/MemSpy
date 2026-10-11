@@ -12,18 +12,18 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "fileless.skel.h"
+#include "memspy.skel.h"
 
-struct fl_sensor {
-    struct fileless_bpf *skeleton;
+struct ms_sensor {
+    struct memspy_bpf *skeleton;
     struct perf_buffer *buffer;
-    fl_observation_cb callback;
+    ms_observation_cb callback;
     void *userdata;
-    struct fl_sensor_stats stats;
+    struct ms_sensor_stats stats;
 };
 
 static void
-set_error(struct fl_error *error, const char *code, const char *format, ...)
+set_error(struct ms_error *error, const char *code, const char *format, ...)
 {
     va_list args;
     if (error == NULL)
@@ -79,7 +79,7 @@ read_command_line(pid_t pid, char *destination, size_t capacity)
 {
     g_autofree char *path = g_strdup_printf("/proc/%d/cmdline", pid);
     int descriptor = open(path, O_RDONLY | O_CLOEXEC);
-    char raw[FL_MAX_CMDLINE_BYTES];
+    char raw[MS_MAX_CMDLINE_BYTES];
     ssize_t length;
     g_autofree char *valid = NULL;
 
@@ -101,25 +101,25 @@ read_command_line(pid_t pid, char *destination, size_t capacity)
 }
 
 bool
-fl_sensor_observation_from_event(const struct fl_kernel_event *event,
-                                 struct fl_observation *observation,
-                                 struct fl_error *error)
+ms_sensor_observation_from_event(const struct ms_kernel_event *event,
+                                 struct ms_observation *observation,
+                                 struct ms_error *error)
 {
     struct timespec now;
     bool actor_complete;
 
-    if (event == NULL || observation == NULL || event->abi_version != FL_KERNEL_EVENT_ABI) {
+    if (event == NULL || observation == NULL || event->abi_version != MS_KERNEL_EVENT_ABI) {
         set_error(error, "sensor_abi", "unsupported kernel event ABI");
         return false;
     }
-    if (event->pid == 0 || (event->kind != FL_KERNEL_EXEC &&
-        event->kind != FL_KERNEL_PROCESS_VM_WRITE && event->kind != FL_KERNEL_PTRACE_WRITE))
+    if (event->pid == 0 || (event->kind != MS_KERNEL_EXEC &&
+        event->kind != MS_KERNEL_PROCESS_VM_WRITE && event->kind != MS_KERNEL_PTRACE_WRITE))
         return false;
 
-    *observation = (struct fl_observation){
-        .kind = event->kind == FL_KERNEL_EXEC ? FL_OBSERVATION_EXEC :
-                event->kind == FL_KERNEL_PROCESS_VM_WRITE ? FL_OBSERVATION_PROCESS_VM_WRITE :
-                FL_OBSERVATION_PTRACE_WRITE,
+    *observation = (struct ms_observation){
+        .kind = event->kind == MS_KERNEL_EXEC ? MS_OBSERVATION_EXEC :
+                event->kind == MS_KERNEL_PROCESS_VM_WRITE ? MS_OBSERVATION_PROCESS_VM_WRITE :
+                MS_OBSERVATION_PTRACE_WRITE,
         .process = {.pid = (pid_t)event->pid},
         .target = {.pid = (pid_t)event->target_pid},
         .observed_boottime_ns = event->observed_boottime_ns,
@@ -138,9 +138,9 @@ fl_sensor_observation_from_event(const struct fl_kernel_event *event,
                      read_command_line(observation->process.pid, observation->cmdline,
                                        sizeof observation->cmdline);
     if (strstr(observation->exe, "memfd:") != NULL)
-        observation->flags |= FL_OBSERVATION_MEMFD;
+        observation->flags |= MS_OBSERVATION_MEMFD;
     if (g_str_has_suffix(observation->exe, " (deleted)"))
-        observation->flags |= FL_OBSERVATION_DELETED;
+        observation->flags |= MS_OBSERVATION_DELETED;
 
     if (observation->target.pid > 0) {
         if (!read_process_stat(observation->target.pid, NULL,
@@ -156,17 +156,17 @@ fl_sensor_observation_from_event(const struct fl_kernel_event *event,
 static void
 on_sample(void *context, int cpu, void *data, __u32 size)
 {
-    struct fl_sensor *sensor = context;
-    const struct fl_kernel_event *event = data;
-    struct fl_observation observation;
-    struct fl_error error = {0};
+    struct ms_sensor *sensor = context;
+    const struct ms_kernel_event *event = data;
+    struct ms_observation observation;
+    struct ms_error error = {0};
     (void)cpu;
 
-    if (size == sizeof(struct fl_kernel_event) && event->abi_version == FL_KERNEL_EVENT_ABI &&
-        (event->kind == FL_KERNEL_MEMFD_CREATE || event->kind == FL_KERNEL_FORK))
+    if (size == sizeof(struct ms_kernel_event) && event->abi_version == MS_KERNEL_EVENT_ABI &&
+        (event->kind == MS_KERNEL_MEMFD_CREATE || event->kind == MS_KERNEL_FORK))
         return;
-    if (size != sizeof(struct fl_kernel_event) ||
-        !fl_sensor_observation_from_event(data, &observation, &error)) {
+    if (size != sizeof(struct ms_kernel_event) ||
+        !ms_sensor_observation_from_event(data, &observation, &error)) {
         ++sensor->stats.invalid_events;
         return;
     }
@@ -177,22 +177,22 @@ on_sample(void *context, int cpu, void *data, __u32 size)
 static void
 on_lost(void *context, int cpu, __u64 lost)
 {
-    struct fl_sensor *sensor = context;
+    struct ms_sensor *sensor = context;
     (void)cpu;
     sensor->stats.lost_events += lost;
 }
 
 bool
-fl_sensor_open(struct fl_sensor **out, fl_observation_cb callback, void *userdata,
-               struct fl_error *error)
+ms_sensor_open(struct ms_sensor **out, ms_observation_cb callback, void *userdata,
+               struct ms_error *error)
 {
-    struct fl_sensor *sensor;
+    struct ms_sensor *sensor;
     if (out == NULL || callback == NULL) {
         set_error(error, "sensor_invalid", "output and callback are required");
         return false;
     }
-    sensor = g_new0(struct fl_sensor, 1);
-    sensor->skeleton = fileless_bpf__open();
+    sensor = g_new0(struct ms_sensor, 1);
+    sensor->skeleton = memspy_bpf__open();
     if (sensor->skeleton == NULL) {
         set_error(error, "sensor_open", "cannot open BPF skeleton");
         g_free(sensor);
@@ -205,14 +205,14 @@ fl_sensor_open(struct fl_sensor **out, fl_observation_cb callback, void *userdat
 }
 
 bool
-fl_sensor_attach(struct fl_sensor *sensor, struct fl_error *error)
+ms_sensor_attach(struct ms_sensor *sensor, struct ms_error *error)
 {
     int result;
     if (sensor == NULL)
         return false;
-    result = fileless_bpf__load(sensor->skeleton);
+    result = memspy_bpf__load(sensor->skeleton);
     if (result == 0)
-        result = fileless_bpf__attach(sensor->skeleton);
+        result = memspy_bpf__attach(sensor->skeleton);
     if (result != 0) {
         set_error(error, "sensor_attach", "cannot load or attach BPF programs: %s", strerror(-result));
         return false;
@@ -229,7 +229,7 @@ fl_sensor_attach(struct fl_sensor *sensor, struct fl_error *error)
 }
 
 int
-fl_sensor_poll(struct fl_sensor *sensor, int timeout_ms, struct fl_error *error)
+ms_sensor_poll(struct ms_sensor *sensor, int timeout_ms, struct ms_error *error)
 {
     int result;
     if (sensor == NULL || sensor->buffer == NULL)
@@ -241,18 +241,18 @@ fl_sensor_poll(struct fl_sensor *sensor, int timeout_ms, struct fl_error *error)
 }
 
 void
-fl_sensor_stats(const struct fl_sensor *sensor, struct fl_sensor_stats *stats)
+ms_sensor_stats(const struct ms_sensor *sensor, struct ms_sensor_stats *stats)
 {
     if (sensor != NULL && stats != NULL)
         *stats = sensor->stats;
 }
 
 void
-fl_sensor_free(struct fl_sensor *sensor)
+ms_sensor_free(struct ms_sensor *sensor)
 {
     if (sensor == NULL)
         return;
     perf_buffer__free(sensor->buffer);
-    fileless_bpf__destroy(sensor->skeleton);
+    memspy_bpf__destroy(sensor->skeleton);
     g_free(sensor);
 }

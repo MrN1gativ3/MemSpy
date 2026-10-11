@@ -9,7 +9,7 @@ static char *
 write_config(const char *contents)
 {
     char *path = NULL;
-    int descriptor = g_file_open_tmp("fileless-allowlist-XXXXXX", &path, NULL);
+    int descriptor = g_file_open_tmp("memspy-allowlist-XXXXXX", &path, NULL);
 
     g_assert_cmpint(descriptor, >=, 0);
     g_assert_cmpint(close(descriptor), ==, 0);
@@ -23,40 +23,40 @@ test_allowlist_matches_only_exact_rule_and_path(void)
     g_autofree char *path = write_config(
         "# known developer tools\n"
         "\n"
-        "FL-MEMFD-EXEC /usr/bin/browser\n"
-        "FL-PTRACE-WRITE /opt/Debug Tool\n"
-        "FL-MEMFD-EXEC /usr/bin/*\n");
-    struct fl_allowlist *allowlist = NULL;
-    struct fl_error error = {0};
+        "MEMFD_EXEC /usr/bin/browser\n"
+        "PTRACE_WRITE /opt/Debug Tool\n"
+        "MEMFD_EXEC /usr/bin/*\n");
+    struct ms_allowlist *allowlist = NULL;
+    struct ms_error error = {0};
 
-    g_assert_true(fl_allowlist_load(path, &allowlist, &error));
-    g_assert_true(fl_allowlist_matches(allowlist, "FL-MEMFD-EXEC", "/usr/bin/browser"));
-    g_assert_true(fl_allowlist_matches(allowlist, "FL-PTRACE-WRITE", "/opt/Debug Tool"));
-    g_assert_false(fl_allowlist_matches(allowlist, "FL-PTRACE-WRITE", "/usr/bin/browser"));
-    g_assert_false(fl_allowlist_matches(allowlist, "FL-MEMFD-EXEC", "/usr/bin/bash"));
-    g_assert_true(fl_allowlist_matches(allowlist, "FL-MEMFD-EXEC", "/usr/bin/*"));
+    g_assert_true(ms_allowlist_load(path, &allowlist, &error));
+    g_assert_true(ms_allowlist_matches(allowlist, "MEMFD_EXEC", "/usr/bin/browser"));
+    g_assert_true(ms_allowlist_matches(allowlist, "PTRACE_WRITE", "/opt/Debug Tool"));
+    g_assert_false(ms_allowlist_matches(allowlist, "PTRACE_WRITE", "/usr/bin/browser"));
+    g_assert_false(ms_allowlist_matches(allowlist, "MEMFD_EXEC", "/usr/bin/bash"));
+    g_assert_true(ms_allowlist_matches(allowlist, "MEMFD_EXEC", "/usr/bin/*"));
 
-    fl_allowlist_free(allowlist);
+    ms_allowlist_free(allowlist);
     g_assert_cmpint(g_unlink(path), ==, 0);
 }
 
 static void
 test_allowlist_rejects_bad_line_without_replacing_previous(void)
 {
-    g_autofree char *good_path = write_config("FL-MEMFD-EXEC /usr/bin/browser\n");
-    g_autofree char *bad_path = write_config("FL-MEMFD-EXEC relative/path\n");
-    struct fl_allowlist *allowlist = NULL;
-    struct fl_allowlist *previous;
-    struct fl_error error = {0};
+    g_autofree char *good_path = write_config("MEMFD_EXEC /usr/bin/browser\n");
+    g_autofree char *bad_path = write_config("MEMFD_EXEC relative/path\n");
+    struct ms_allowlist *allowlist = NULL;
+    struct ms_allowlist *previous;
+    struct ms_error error = {0};
 
-    g_assert_true(fl_allowlist_load(good_path, &allowlist, &error));
+    g_assert_true(ms_allowlist_load(good_path, &allowlist, &error));
     previous = allowlist;
-    g_assert_false(fl_allowlist_load(bad_path, &allowlist, &error));
+    g_assert_false(ms_allowlist_load(bad_path, &allowlist, &error));
     g_assert_true(allowlist == previous);
     g_assert_nonnull(strstr(error.message, "line 1"));
-    g_assert_true(fl_allowlist_matches(allowlist, "FL-MEMFD-EXEC", "/usr/bin/browser"));
+    g_assert_true(ms_allowlist_matches(allowlist, "MEMFD_EXEC", "/usr/bin/browser"));
 
-    fl_allowlist_free(allowlist);
+    ms_allowlist_free(allowlist);
     g_assert_cmpint(g_unlink(good_path), ==, 0);
     g_assert_cmpint(g_unlink(bad_path), ==, 0);
 }
@@ -65,14 +65,14 @@ static void
 test_allowlist_rejects_unbounded_entries(void)
 {
     g_autoptr(GString) contents = g_string_new(NULL);
-    struct fl_allowlist *allowlist = NULL;
-    struct fl_error error = {0};
+    struct ms_allowlist *allowlist = NULL;
+    struct ms_error error = {0};
 
     for (unsigned int index = 0; index < 4097U; ++index)
-        g_string_append_printf(contents, "FL-MEMFD-EXEC /usr/bin/tool-%u\n", index);
+        g_string_append_printf(contents, "MEMFD_EXEC /usr/bin/tool-%u\n", index);
     g_autofree char *path = write_config(contents->str);
 
-    g_assert_false(fl_allowlist_load(path, &allowlist, &error));
+    g_assert_false(ms_allowlist_load(path, &allowlist, &error));
     g_assert_null(allowlist);
     g_assert_nonnull(strstr(error.message, "too many entries"));
     g_assert_cmpint(g_unlink(path), ==, 0);

@@ -8,16 +8,16 @@
 #include "state.h"
 #include "window.h"
 
-#define FILELESS_UI_VERSION "0.1.0"
-#define FILELESS_SOCKET_PATH "/run/filelessd/filelessd.sock"
-#define FL_UI_MAX_HISTORY 10000U
+#define MEMSPY_UI_VERSION "0.1.0"
+#define MEMSPY_SOCKET_PATH "/run/memspy/memspy.sock"
+#define MS_UI_MAX_HISTORY 10000U
 
 struct ui_app {
     GtkApplication *application;
-    struct fl_window *window;
-    struct fl_indicator *indicator;
-    struct fl_ui_state state;
-    struct fl_alert latest;
+    struct ms_window *window;
+    struct ms_indicator *indicator;
+    struct ms_ui_state state;
+    struct ms_alert latest;
     bool have_latest;
     bool background;
     gint stopping;
@@ -26,31 +26,31 @@ struct ui_app {
     GThread *connection_thread;
     GMutex mutex;
     GCond wake;
-    struct fl_client *client;
+    struct ms_client *client;
     int64_t known_id;
 };
 
 struct snapshot {
     struct ui_app *ui;
-    struct fl_health health;
+    struct ms_health health;
     GArray *alerts;
 };
 
 struct alert_event {
     struct ui_app *ui;
-    struct fl_alert alert;
+    struct ms_alert alert;
 };
 
 struct health_event {
     struct ui_app *ui;
-    struct fl_health health;
+    struct ms_health health;
 };
 
 static void
 save_state(struct ui_app *ui)
 {
-    struct fl_error error = {0};
-    if (!fl_ui_state_save(&ui->state, ui->state_path, &error))
+    struct ms_error error = {0};
+    if (!ms_ui_state_save(&ui->state, ui->state_path, &error))
         g_warning("cannot save UI state: %s", error.message);
 }
 
@@ -58,7 +58,7 @@ static void
 update_indicator(struct ui_app *ui)
 {
     if (ui->indicator != NULL)
-        fl_indicator_update(ui->indicator, fl_ui_state_indicator(&ui->state),
+        ms_indicator_update(ui->indicator, ms_ui_state_indicator(&ui->state),
                             ui->have_latest ? &ui->latest : NULL);
 }
 
@@ -66,8 +66,8 @@ static void
 open_window(void *userdata)
 {
     struct ui_app *ui = userdata;
-    fl_window_present(ui->window);
-    fl_ui_state_mark_visible_read(&ui->state);
+    ms_window_present(ui->window);
+    ms_ui_state_mark_visible_read(&ui->state);
     save_state(ui);
     update_indicator(ui);
 }
@@ -84,7 +84,7 @@ open_alert(int64_t alert_id, void *userdata)
 {
     struct ui_app *ui = userdata;
     open_window(ui);
-    fl_window_select_alert(ui->window, alert_id);
+    ms_window_select_alert(ui->window, alert_id);
 }
 
 static gboolean
@@ -98,8 +98,8 @@ apply_alert(gpointer userdata)
         g_free(event);
         return G_SOURCE_REMOVE;
     }
-    is_new = fl_window_add_alert(ui->window, &event->alert) &&
-             fl_ui_state_apply_alert(&ui->state, &event->alert);
+    is_new = ms_window_add_alert(ui->window, &event->alert) &&
+             ms_ui_state_apply_alert(&ui->state, &event->alert);
     if (is_new) {
         ui->latest = event->alert;
         ui->have_latest = true;
@@ -107,9 +107,9 @@ apply_alert(gpointer userdata)
         if (event->alert.id > ui->known_id)
             ui->known_id = event->alert.id;
         g_mutex_unlock(&ui->mutex);
-        if (ui->notifications_ready && fl_ui_state_should_notify(&ui->state, &event->alert)) {
-            fl_notifications_show(&event->alert, open_alert, ui);
-            fl_ui_state_mark_alert_notified(&ui->state, &event->alert);
+        if (ui->notifications_ready && ms_ui_state_should_notify(&ui->state, &event->alert)) {
+            ms_notifications_show(&event->alert, open_alert, ui);
+            ms_ui_state_mark_alert_notified(&ui->state, &event->alert);
             save_state(ui);
         }
     }
@@ -123,8 +123,8 @@ apply_health(gpointer userdata)
 {
     struct health_event *event = userdata;
     if (!g_atomic_int_get(&event->ui->stopping)) {
-        fl_ui_state_apply_health(&event->ui->state, &event->health);
-        fl_window_set_health(event->ui->window, &event->health);
+        ms_ui_state_apply_health(&event->ui->state, &event->health);
+        ms_window_set_health(event->ui->window, &event->health);
         update_indicator(event->ui);
     }
     g_free(event);
@@ -137,12 +137,12 @@ apply_snapshot(gpointer userdata)
     struct snapshot *snapshot = userdata;
     struct ui_app *ui = snapshot->ui;
     if (!g_atomic_int_get(&ui->stopping)) {
-        fl_ui_state_apply_health(&ui->state, &snapshot->health);
-        fl_window_set_health(ui->window, &snapshot->health);
+        ms_ui_state_apply_health(&ui->state, &snapshot->health);
+        ms_window_set_health(ui->window, &snapshot->health);
         for (guint index = snapshot->alerts->len; index > 0; --index) {
-            struct fl_alert *alert = &g_array_index(snapshot->alerts, struct fl_alert, index - 1U);
-            if (fl_window_add_alert(ui->window, alert) &&
-                fl_ui_state_apply_alert(&ui->state, alert)) {
+            struct ms_alert *alert = &g_array_index(snapshot->alerts, struct ms_alert, index - 1U);
+            if (ms_window_add_alert(ui->window, alert) &&
+                ms_ui_state_apply_alert(&ui->state, alert)) {
                 ui->latest = *alert;
                 ui->have_latest = true;
             }
@@ -162,15 +162,15 @@ apply_disconnected(gpointer userdata)
 {
     struct ui_app *ui = userdata;
     if (!g_atomic_int_get(&ui->stopping)) {
-        fl_ui_state_disconnect(&ui->state);
-        fl_window_set_offline(ui->window, "Detector unavailable · reconnecting…");
+        ms_ui_state_disconnect(&ui->state);
+        ms_window_set_offline(ui->window, "Detector unavailable · reconnecting…");
         update_indicator(ui);
     }
     return G_SOURCE_REMOVE;
 }
 
 static void
-thread_alert(const struct fl_alert *alert, void *userdata)
+thread_alert(const struct ms_alert *alert, void *userdata)
 {
     struct alert_event *event = g_new(struct alert_event, 1);
     event->ui = userdata;
@@ -179,7 +179,7 @@ thread_alert(const struct fl_alert *alert, void *userdata)
 }
 
 static void
-thread_health(const struct fl_health *health, void *userdata)
+thread_health(const struct ms_health *health, void *userdata)
 {
     struct health_event *event = g_new(struct health_event, 1);
     event->ui = userdata;
@@ -188,16 +188,16 @@ thread_health(const struct fl_health *health, void *userdata)
 }
 
 static GArray *
-load_history(struct fl_client *client, int64_t known_id, struct fl_error *error)
+load_history(struct ms_client *client, int64_t known_id, struct ms_error *error)
 {
-    GArray *alerts = g_array_new(false, false, sizeof(struct fl_alert));
+    GArray *alerts = g_array_new(false, false, sizeof(struct ms_alert));
     int64_t before_id = 0;
     bool reached_known = false;
 
-    while (!reached_known && alerts->len < FL_UI_MAX_HISTORY) {
-        struct fl_alert_page page = {0};
-        if (!fl_client_list_alerts(client, before_id, FL_SEVERITY_MEDIUM, 200, &page, error)) {
-            fl_alert_page_clear(&page);
+    while (!reached_known && alerts->len < MS_UI_MAX_HISTORY) {
+        struct ms_alert_page page = {0};
+        if (!ms_client_list_alerts(client, before_id, MS_SEVERITY_MEDIUM, 200, &page, error)) {
+            ms_alert_page_clear(&page);
             g_array_free(alerts, true);
             return NULL;
         }
@@ -208,7 +208,7 @@ load_history(struct fl_client *client, int64_t known_id, struct fl_error *error)
         }
         before_id = page.next_before_id;
         bool finished = page.length == 0 || before_id == 0;
-        fl_alert_page_clear(&page);
+        ms_alert_page_clear(&page);
         if (finished)
             break;
     }
@@ -223,9 +223,9 @@ connection_worker(gpointer userdata)
     unsigned int delay_seconds = 1;
 
     while (true) {
-        struct fl_client *client = NULL;
-        struct fl_error error = {0};
-        struct fl_health health = {0};
+        struct ms_client *client = NULL;
+        struct ms_error error = {0};
+        struct ms_health health = {0};
         int64_t known_id;
 
         g_mutex_lock(&ui->mutex);
@@ -235,21 +235,21 @@ connection_worker(gpointer userdata)
         }
         known_id = ui->known_id;
         g_mutex_unlock(&ui->mutex);
-        if (fl_client_connect(FILELESS_SOCKET_PATH, &client, &error)) {
+        if (ms_client_connect(MEMSPY_SOCKET_PATH, &client, &error)) {
             GArray *history;
             g_mutex_lock(&ui->mutex);
             ui->client = client;
             g_mutex_unlock(&ui->mutex);
-            history = fl_client_get_status(client, &health, &error) ?
+            history = ms_client_get_status(client, &health, &error) ?
                 load_history(client, known_id, &error) : NULL;
-            if (history != NULL && fl_client_subscribe(client, thread_alert, thread_health, ui, &error)) {
+            if (history != NULL && ms_client_subscribe(client, thread_alert, thread_health, ui, &error)) {
                 struct snapshot *snapshot = g_new(struct snapshot, 1);
                 snapshot->ui = ui;
                 snapshot->health = health;
                 snapshot->alerts = history;
                 g_idle_add(apply_snapshot, snapshot);
                 delay_seconds = 1;
-                fl_client_wait(client);
+                ms_client_wait(client);
             } else if (history != NULL) {
                 g_array_free(history, true);
             }
@@ -257,7 +257,7 @@ connection_worker(gpointer userdata)
             if (ui->client == client)
                 ui->client = NULL;
             g_mutex_unlock(&ui->mutex);
-            fl_client_close(client);
+            ms_client_close(client);
         }
         g_idle_add(apply_disconnected, ui);
         g_mutex_lock(&ui->mutex);
@@ -288,8 +288,8 @@ static void
 load_css(void)
 {
     GtkCssProvider *provider = gtk_css_provider_new();
-    const char *installed = "/usr/share/fileless-detector/fileless-ui.css";
-    const char *path = g_file_test(installed, G_FILE_TEST_IS_REGULAR) ? installed : "data/fileless-ui.css";
+    const char *installed = "/usr/share/memspy/memspy-ui.css";
+    const char *path = g_file_test(installed, G_FILE_TEST_IS_REGULAR) ? installed : "data/memspy-ui.css";
     gtk_css_provider_load_from_path(provider, path, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
         GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
@@ -300,7 +300,7 @@ static void
 activate(GtkApplication *application, gpointer userdata)
 {
     struct ui_app *ui = userdata;
-    struct fl_error error = {0};
+    struct ms_error error = {0};
     if (ui->window != NULL) {
         if (!ui->background)
             open_window(ui);
@@ -308,23 +308,23 @@ activate(GtkApplication *application, gpointer userdata)
     }
     ui->application = application;
     load_css();
-    ui->window = fl_window_new(application);
-    g_signal_connect(fl_window_widget(ui->window), "delete-event",
+    ui->window = ms_window_new(application);
+    g_signal_connect(ms_window_widget(ui->window), "delete-event",
                      G_CALLBACK(hide_on_delete), ui);
-    fl_ui_state_init(&ui->state);
-    if (!fl_ui_state_load(&ui->state, ui->state_path, &error))
+    ms_ui_state_init(&ui->state);
+    if (!ms_ui_state_load(&ui->state, ui->state_path, &error))
         g_warning("cannot load UI state: %s", error.message);
     ui->known_id = ui->state.last_alert_id;
-    ui->notifications_ready = fl_notifications_init();
-    ui->indicator = fl_indicator_new(open_window, quit_ui, ui);
+    ui->notifications_ready = ms_notifications_init();
+    ui->indicator = ms_indicator_new(open_window, quit_ui, ui);
     if (ui->indicator == NULL) {
-        fl_window_set_offline(ui->window, "Panel indicator unavailable · window remains usable");
+        ms_window_set_offline(ui->window, "Panel indicator unavailable · window remains usable");
         ui->background = false;
     }
     update_indicator(ui);
-    ui->connection_thread = g_thread_new("fileless-ui-connection", connection_worker, ui);
+    ui->connection_thread = g_thread_new("memspy-ui-connection", connection_worker, ui);
     if (!ui->background)
-        fl_window_present(ui->window);
+        ms_window_present(ui->window);
 }
 
 static void
@@ -333,15 +333,15 @@ shutdown_ui(struct ui_app *ui)
     g_mutex_lock(&ui->mutex);
     g_atomic_int_set(&ui->stopping, true);
     if (ui->client != NULL)
-        fl_client_interrupt(ui->client);
+        ms_client_interrupt(ui->client);
     g_cond_signal(&ui->wake);
     g_mutex_unlock(&ui->mutex);
     if (ui->connection_thread != NULL)
         g_thread_join(ui->connection_thread);
     save_state(ui);
-    fl_indicator_free(ui->indicator);
-    fl_notifications_uninit();
-    fl_window_free(ui->window);
+    ms_indicator_free(ui->indicator);
+    ms_notifications_uninit();
+    ms_window_free(ui->window);
 }
 
 int
@@ -353,20 +353,20 @@ main(int argc, char **argv)
 
     signal(SIGPIPE, SIG_IGN);
     if (argc == 2 && strcmp(argv[1], "--version") == 0) {
-        g_print("fileless-ui %s\n", FILELESS_UI_VERSION);
+        g_print("memspy-ui %s\n", MEMSPY_UI_VERSION);
         return 0;
     }
     if (argc == 2 && strcmp(argv[1], "--background") == 0) {
         ui.background = true;
         argc = 1;
     } else if (argc != 1) {
-        g_printerr("Usage: fileless-ui [--background|--version]\n");
+        g_printerr("Usage: memspy-ui [--background|--version]\n");
         return 2;
     }
     g_mutex_init(&ui.mutex);
     g_cond_init(&ui.wake);
-    ui.state_path = g_build_filename(g_get_user_state_dir(), "fileless-detector", "ui-state", NULL);
-    application = gtk_application_new("org.fileless.DetectorUI", G_APPLICATION_DEFAULT_FLAGS);
+    ui.state_path = g_build_filename(g_get_user_state_dir(), "memspy", "ui-state", NULL);
+    application = gtk_application_new("org.memspy.MemSpyUI", G_APPLICATION_DEFAULT_FLAGS);
     g_signal_connect(application, "activate", G_CALLBACK(activate), &ui);
     result = g_application_run(G_APPLICATION(application), argc, argv);
     if (ui.window != NULL)

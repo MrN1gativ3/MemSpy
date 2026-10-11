@@ -12,19 +12,19 @@
 #include <sys/un.h>
 #include <unistd.h>
 
-struct fl_client {
+struct ms_client {
     int descriptor;
     GThread *subscription_thread;
-    void (*on_alert)(const struct fl_alert *, void *);
-    void (*on_health)(const struct fl_health *, void *);
+    void (*on_alert)(const struct ms_alert *, void *);
+    void (*on_health)(const struct ms_health *, void *);
     void *userdata;
     gint stopping;
 };
 
-static bool decode_health(json_object *object, struct fl_health *health);
+static bool decode_health(json_object *object, struct ms_health *health);
 
 static void
-set_error(struct fl_error *error, const char *code, const char *format, ...)
+set_error(struct ms_error *error, const char *code, const char *format, ...)
 {
     va_list args;
     if (error == NULL)
@@ -52,16 +52,16 @@ write_line(int descriptor, const char *line)
 }
 
 static json_object *
-read_reply(int descriptor, struct fl_error *error)
+read_reply(int descriptor, struct ms_error *error)
 {
-    char *buffer = malloc(FL_MAX_MESSAGE_BYTES + 1U);
+    char *buffer = malloc(MS_MAX_MESSAGE_BYTES + 1U);
     size_t used = 0;
     json_object *reply;
     enum json_tokener_error parse_error;
 
     if (buffer == NULL)
         return NULL;
-    while (used < FL_MAX_MESSAGE_BYTES) {
+    while (used < MS_MAX_MESSAGE_BYTES) {
         ssize_t count = read(descriptor, buffer + used, 1);
         if (count < 0 && errno == EINTR)
             continue;
@@ -73,7 +73,7 @@ read_reply(int descriptor, struct fl_error *error)
         if (buffer[used++] == '\n')
             break;
     }
-    if (used == FL_MAX_MESSAGE_BYTES && buffer[used - 1] != '\n') {
+    if (used == MS_MAX_MESSAGE_BYTES && buffer[used - 1] != '\n') {
         set_error(error, "oversized_reply", "daemon reply is too large");
         free(buffer);
         return NULL;
@@ -89,7 +89,7 @@ read_reply(int descriptor, struct fl_error *error)
 }
 
 static bool
-reply_ok(json_object *reply, struct fl_error *error)
+reply_ok(json_object *reply, struct ms_error *error)
 {
     json_object *field;
     if (!json_object_object_get_ex(reply, "ok", &field) || !json_object_get_boolean(field)) {
@@ -103,9 +103,9 @@ reply_ok(json_object *reply, struct fl_error *error)
 }
 
 bool
-fl_client_connect_fd(int connected_fd, struct fl_client **out, struct fl_error *error)
+ms_client_connect_fd(int connected_fd, struct ms_client **out, struct ms_error *error)
 {
-    struct fl_client *client;
+    struct ms_client *client;
     json_object *reply;
 
     if (connected_fd < 0 || out == NULL)
@@ -119,14 +119,14 @@ fl_client_connect_fd(int connected_fd, struct fl_client **out, struct fl_error *
     client->descriptor = connected_fd;
     if (!write_line(client->descriptor, "{\"v\":1,\"op\":\"hello\"}")) {
         set_error(error, "connect_failed", "%s", strerror(errno));
-        fl_client_close(client);
+        ms_client_close(client);
         return false;
     }
     reply = read_reply(client->descriptor, error);
     if (reply == NULL || !reply_ok(reply, error)) {
         if (reply != NULL)
             json_object_put(reply);
-        fl_client_close(client);
+        ms_client_close(client);
         return false;
     }
     json_object_put(reply);
@@ -135,7 +135,7 @@ fl_client_connect_fd(int connected_fd, struct fl_client **out, struct fl_error *
 }
 
 bool
-fl_client_connect(const char *path, struct fl_client **out, struct fl_error *error)
+ms_client_connect(const char *path, struct ms_client **out, struct ms_error *error)
 {
     struct sockaddr_un address = {.sun_family = AF_UNIX};
     int descriptor;
@@ -151,11 +151,11 @@ fl_client_connect(const char *path, struct fl_client **out, struct fl_error *err
         close(descriptor);
         return false;
     }
-    return fl_client_connect_fd(descriptor, out, error);
+    return ms_client_connect_fd(descriptor, out, error);
 }
 
 bool
-fl_client_get_status(struct fl_client *client, struct fl_health *health, struct fl_error *error)
+ms_client_get_status(struct ms_client *client, struct ms_health *health, struct ms_error *error)
 {
     json_object *reply;
     json_object *object;
@@ -175,7 +175,7 @@ fl_client_get_status(struct fl_client *client, struct fl_health *health, struct 
 }
 
 static bool
-decode_health(json_object *object, struct fl_health *health)
+decode_health(json_object *object, struct ms_health *health)
 {
     json_object *field;
     int64_t value;
@@ -188,10 +188,10 @@ decode_health(json_object *object, struct fl_health *health)
 } while (0)
     if (!json_object_object_get_ex(object, "state", &field) ||
         json_object_get_type(field) != json_type_int ||
-        json_object_get_int(field) < FL_HEALTH_HEALTHY ||
-        json_object_get_int(field) > FL_HEALTH_FAILED)
+        json_object_get_int(field) < MS_HEALTH_HEALTHY ||
+        json_object_get_int(field) > MS_HEALTH_FAILED)
         return false;
-    health->state = (enum fl_health_state)json_object_get_int(field);
+    health->state = (enum ms_health_state)json_object_get_int(field);
     HEALTH_VALUE("lost_events", lost_events);
     HEALTH_VALUE("map_pressure", map_pressure);
     HEALTH_VALUE("dropped_alerts", dropped_alerts);
@@ -214,8 +214,8 @@ decode_health(json_object *object, struct fl_health *health)
 static gpointer
 subscription_worker(gpointer data)
 {
-    struct fl_client *client = data;
-    struct fl_error error = {0};
+    struct ms_client *client = data;
+    struct ms_error error = {0};
     json_object *message;
 
     while (!g_atomic_int_get(&client->stopping)) {
@@ -238,12 +238,12 @@ subscription_worker(gpointer data)
         }
         if (strcmp(json_object_get_string(event), "alert") == 0 && client->on_alert != NULL &&
             json_object_object_get_ex(message, "alert", &payload)) {
-            struct fl_alert alert = {0};
-            if (fl_alert_from_json(payload, &alert, NULL))
+            struct ms_alert alert = {0};
+            if (ms_alert_from_json(payload, &alert, NULL))
                 client->on_alert(&alert, client->userdata);
         } else if (strcmp(json_object_get_string(event), "health") == 0 && client->on_health != NULL &&
                    json_object_object_get_ex(message, "health", &payload)) {
-            struct fl_health health = {0};
+            struct ms_health health = {0};
             if (decode_health(payload, &health))
                 client->on_health(&health, client->userdata);
         }
@@ -253,8 +253,8 @@ subscription_worker(gpointer data)
 }
 
 bool
-fl_client_list_alerts(struct fl_client *client, int64_t before_id, enum fl_severity minimum,
-                      size_t limit, struct fl_alert_page *page, struct fl_error *error)
+ms_client_list_alerts(struct ms_client *client, int64_t before_id, enum ms_severity minimum,
+                      size_t limit, struct ms_alert_page *page, struct ms_error *error)
 {
     char request[256];
     json_object *reply;
@@ -281,32 +281,32 @@ fl_client_list_alerts(struct fl_client *client, int64_t before_id, enum fl_sever
         json_object_put(reply);
         return false;
     }
-    struct fl_alert_page result = {.items = calloc(length == 0 ? 1 : length, sizeof(struct fl_alert)), .length = length};
+    struct ms_alert_page result = {.items = calloc(length == 0 ? 1 : length, sizeof(struct ms_alert)), .length = length};
     if (result.items == NULL) {
         set_error(error, "client_memory", "cannot allocate alert history");
         json_object_put(reply);
         return false;
     }
     for (size_t index = 0; index < length; ++index) {
-        if (!fl_alert_from_json(json_object_array_get_idx(items, index), &result.items[index], error)) {
-            fl_alert_page_clear(&result);
+        if (!ms_alert_from_json(json_object_array_get_idx(items, index), &result.items[index], error)) {
+            ms_alert_page_clear(&result);
             json_object_put(reply);
             return false;
         }
     }
     if (json_object_object_get_ex(reply, "next_before_id", &field))
         result.next_before_id = json_object_get_int64(field);
-    fl_alert_page_clear(page);
+    ms_alert_page_clear(page);
     *page = result;
     json_object_put(reply);
     return true;
 }
 
 bool
-fl_client_subscribe(struct fl_client *client,
-                    void (*on_alert)(const struct fl_alert *, void *),
-                    void (*on_health)(const struct fl_health *, void *),
-                    void *userdata, struct fl_error *error)
+ms_client_subscribe(struct ms_client *client,
+                    void (*on_alert)(const struct ms_alert *, void *),
+                    void (*on_health)(const struct ms_health *, void *),
+                    void *userdata, struct ms_error *error)
 {
     json_object *reply;
     if (client == NULL || client->subscription_thread != NULL ||
@@ -322,12 +322,12 @@ fl_client_subscribe(struct fl_client *client,
     client->on_alert = on_alert;
     client->on_health = on_health;
     client->userdata = userdata;
-    client->subscription_thread = g_thread_new("fileless-client-subscription", subscription_worker, client);
+    client->subscription_thread = g_thread_new("memspy-client-subscription", subscription_worker, client);
     return true;
 }
 
 void
-fl_client_interrupt(struct fl_client *client)
+ms_client_interrupt(struct ms_client *client)
 {
     if (client == NULL)
         return;
@@ -336,7 +336,7 @@ fl_client_interrupt(struct fl_client *client)
 }
 
 void
-fl_client_wait(struct fl_client *client)
+ms_client_wait(struct ms_client *client)
 {
     if (client != NULL && client->subscription_thread != NULL) {
         g_thread_join(client->subscription_thread);
@@ -345,12 +345,12 @@ fl_client_wait(struct fl_client *client)
 }
 
 void
-fl_client_close(struct fl_client *client)
+ms_client_close(struct ms_client *client)
 {
     if (client == NULL)
         return;
-    fl_client_interrupt(client);
-    fl_client_wait(client);
+    ms_client_interrupt(client);
+    ms_client_wait(client);
     close(client->descriptor);
     free(client);
 }

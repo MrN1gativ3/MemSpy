@@ -1,6 +1,6 @@
-# Fileless Detector
+# MemSpy
 
-Fileless Detector is a local, detection-only Linux security monitor built with eBPF, libbpf, and C. It watches a focused set of high-confidence fileless execution and process-injection behaviors, retains alerts locally for 30 days, and displays them in a separate unprivileged desktop panel application.
+MemSpy is a local, detection-only Linux security monitor built with eBPF, libbpf, and C. It watches a focused set of high-confidence fileless execution and process-injection behaviors, retains alerts locally for 30 days, and displays them in a separate unprivileged desktop panel application.
 
 It is not an endpoint protection platform: it does not block execution, kill processes, quarantine files, inspect payload memory, or send telemetry.
 
@@ -23,11 +23,11 @@ It is not an endpoint protection platform: it does not block execution, kill pro
 
 | Rule | Severity | Detects |
 | --- | --- | --- |
-| `FL-MEMFD-EXEC` | High | Execution from a tracked `memfd` or a confirmed memory-backed executable descriptor |
-| `FL-DELETED-EXEC` | Medium | A process whose executable image is already marked deleted |
-| `FL-PROCESS-VM-WRITE` | Medium | A successful `process_vm_writev` into another process |
-| `FL-PTRACE-WRITE` | Medium | A modifying `ptrace` operation against another process |
-| `FL-INJECTION-CHAIN` | High | A cross-process write followed by memory-backed or deleted-image execution within 30 seconds |
+| `MEMFD_EXEC` | High | Execution from a tracked `memfd` or a confirmed memory-backed executable descriptor |
+| `DELETED_EXEC` | Medium | A process whose executable image is already marked deleted |
+| `PROCESS_VM_WRITE` | Medium | A successful `process_vm_writev` into another process |
+| `PTRACE_WRITE` | Medium | A modifying `ptrace` operation against another process |
+| `INJECTION_CHAIN` | High | A cross-process write followed by memory-backed or deleted-image execution within 30 seconds |
 
 These detections are behavioral signals, not proof that a process is malicious. Legitimate debuggers, runtimes, profilers, and security tools can trigger them.
 
@@ -36,11 +36,11 @@ These detections are behavioral signals, not proof that a process is malicious. 
 ```mermaid
 flowchart LR
     K[Linux kernel tracepoints] --> B[eBPF sensor]
-    B --> D[filelessd daemon]
+    B --> D[memspyd daemon]
     D --> P[Correlation and policy]
     P --> S[(SQLite alerts<br/>30-day retention)]
     D --> A[Read-only Unix socket]
-    A --> U[fileless-ui]
+    A --> U[memspy-ui]
     U --> I[Panel status and alert window]
     U --> N[High-severity notifications]
 ```
@@ -77,17 +77,17 @@ sudo ./install.sh "$USER" gnome
 sudo ./install.sh "$USER" kde
 ```
 
-Log out and back in after installation so the new `filelessd-ui` group membership takes effect. The indicator is configured to start with the desktop session; it can also be launched manually:
+Log out and back in after installation so the new `memspy-ui` group membership takes effect. The indicator is configured to start with the desktop session; it can also be launched manually:
 
 ```sh
-fileless-ui
+memspy-ui
 ```
 
 Check the daemon:
 
 ```sh
-systemctl status filelessd
-journalctl -u filelessd
+systemctl status memspyd
+journalctl -u memspyd
 ```
 
 ## Manual build and test for contributors
@@ -124,14 +124,14 @@ sh tests/package/test_install.sh build-package
 
 | Path | Purpose | Access |
 | --- | --- | --- |
-| `/var/lib/filelessd/alerts.db` | SQLite alert database | `root`, mode `0600` |
-| `/run/filelessd/filelessd.sock` | Read-only local API | `root:filelessd-ui`, mode `0660` |
-| `/etc/filelessd/allowlist.conf` | Exact-path allowlist | Administrator managed |
+| `/var/lib/memspy/alerts.db` | SQLite alert database | `root`, mode `0600` |
+| `/run/memspy/memspy.sock` | Read-only local API | `root:memspy-ui`, mode `0660` |
+| `/etc/memspy/allowlist.conf` | Exact-path allowlist | Administrator managed |
 
-Membership in `filelessd-ui` permits a user to read process metadata contained in alerts for every local user. Add only trusted desktop accounts:
+Membership in `memspy-ui` permits a user to read process metadata contained in alerts for every local user. Add only trusted desktop accounts:
 
 ```sh
-sudo usermod -aG filelessd-ui USERNAME
+sudo usermod -aG memspy-ui USERNAME
 ```
 
 ## Allowlist
@@ -139,13 +139,13 @@ sudo usermod -aG filelessd-ui USERNAME
 Each non-comment line contains an exact rule ID followed by an absolute executable path:
 
 ```text
-FL-MEMFD-EXEC /usr/lib/example/known-memfd-runtime
+MEMFD_EXEC /usr/lib/example/known-memfd-runtime
 ```
 
 Wildcards and command-line matches are intentionally unsupported. Invalid entries prevent startup instead of silently weakening detection. Restart the daemon after editing the file:
 
 ```sh
-sudo systemctl restart filelessd
+sudo systemctl restart memspyd
 ```
 
 ## Health states
@@ -162,7 +162,7 @@ For startup failures, check:
 uname -m
 uname -r
 test -r /sys/kernel/btf/vmlinux
-journalctl -u filelessd -n 100 --no-pager
+journalctl -u memspyd -n 100 --no-pager
 ```
 
 ## Privacy and security boundaries
@@ -193,6 +193,7 @@ The daemon is privileged because it loads eBPF programs and enriches events acro
 src/bpf/          eBPF programs and kernel/user ABI
 src/daemon/       privileged daemon, policy, storage, and local API
 src/ui/           unprivileged GTK indicator and alert window
+test-samples/     benign detector validation programs
 tests/            unit, integration, UI, packaging, and VM tests
 packaging/        systemd, desktop, Ubuntu, Fedora, and Arch packaging
 debian/           Debian package metadata

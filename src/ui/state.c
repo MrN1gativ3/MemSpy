@@ -10,7 +10,7 @@
 #include <unistd.h>
 
 static void
-set_error(struct fl_error *error, const char *code, const char *message)
+set_error(struct ms_error *error, const char *code, const char *message)
 {
     if (error == NULL)
         return;
@@ -19,14 +19,14 @@ set_error(struct fl_error *error, const char *code, const char *message)
 }
 
 void
-fl_ui_state_init(struct fl_ui_state *state)
+ms_ui_state_init(struct ms_ui_state *state)
 {
     if (state != NULL)
-        *state = (struct fl_ui_state){.filter = FL_UI_FILTER_ALL};
+        *state = (struct ms_ui_state){.filter = MS_UI_FILTER_ALL};
 }
 
 void
-fl_ui_state_apply_health(struct fl_ui_state *state, const struct fl_health *health)
+ms_ui_state_apply_health(struct ms_ui_state *state, const struct ms_health *health)
 {
     if (state == NULL || health == NULL)
         return;
@@ -35,14 +35,14 @@ fl_ui_state_apply_health(struct fl_ui_state *state, const struct fl_health *heal
 }
 
 void
-fl_ui_state_disconnect(struct fl_ui_state *state)
+ms_ui_state_disconnect(struct ms_ui_state *state)
 {
     if (state != NULL)
         state->connected = false;
 }
 
 bool
-fl_ui_state_apply_alert(struct fl_ui_state *state, const struct fl_alert *alert)
+ms_ui_state_apply_alert(struct ms_ui_state *state, const struct ms_alert *alert)
 {
     if (state == NULL || alert == NULL || alert->id < 0 ||
         (alert->id == 0 && alert->observed_boottime_ns == 0) ||
@@ -51,7 +51,7 @@ fl_ui_state_apply_alert(struct fl_ui_state *state, const struct fl_alert *alert)
     if (alert->id > 0)
         state->last_alert_id = alert->id;
     if (alert->id == 0 || alert->id > state->last_seen_id) {
-        if (alert->severity == FL_SEVERITY_HIGH)
+        if (alert->severity == MS_SEVERITY_HIGH)
             ++state->unread_high;
         else
             ++state->unread_medium;
@@ -60,7 +60,7 @@ fl_ui_state_apply_alert(struct fl_ui_state *state, const struct fl_alert *alert)
 }
 
 void
-fl_ui_state_mark_visible_read(struct fl_ui_state *state)
+ms_ui_state_mark_visible_read(struct ms_ui_state *state)
 {
     if (state == NULL)
         return;
@@ -70,62 +70,62 @@ fl_ui_state_mark_visible_read(struct fl_ui_state *state)
 }
 
 void
-fl_ui_state_mark_notified(struct fl_ui_state *state, int64_t alert_id)
+ms_ui_state_mark_notified(struct ms_ui_state *state, int64_t alert_id)
 {
     if (state != NULL && alert_id > state->last_notified_id)
         state->last_notified_id = alert_id;
 }
 
 void
-fl_ui_state_mark_alert_notified(struct fl_ui_state *state, const struct fl_alert *alert)
+ms_ui_state_mark_alert_notified(struct ms_ui_state *state, const struct ms_alert *alert)
 {
     if (state == NULL || alert == NULL)
         return;
-    fl_ui_state_mark_notified(state, alert->id);
+    ms_ui_state_mark_notified(state, alert->id);
     if (alert->observed_boottime_ns > state->last_notified_boottime_ns)
         state->last_notified_boottime_ns = alert->observed_boottime_ns;
 }
 
-enum fl_indicator_state
-fl_ui_state_indicator(const struct fl_ui_state *state)
+enum ms_indicator_state
+ms_ui_state_indicator(const struct ms_ui_state *state)
 {
-    if (state == NULL || !state->connected || state->health.state != FL_HEALTH_HEALTHY ||
+    if (state == NULL || !state->connected || state->health.state != MS_HEALTH_HEALTHY ||
         !state->health.protected)
-        return FL_INDICATOR_OFFLINE;
+        return MS_INDICATOR_OFFLINE;
     if (state->unread_high > 0)
-        return FL_INDICATOR_HIGH;
+        return MS_INDICATOR_HIGH;
     if (state->unread_medium > 0)
-        return FL_INDICATOR_MEDIUM;
-    return FL_INDICATOR_HEALTHY;
+        return MS_INDICATOR_MEDIUM;
+    return MS_INDICATOR_HEALTHY;
 }
 
 bool
-fl_ui_state_should_notify(const struct fl_ui_state *state, const struct fl_alert *alert)
+ms_ui_state_should_notify(const struct ms_ui_state *state, const struct ms_alert *alert)
 {
     return state != NULL && alert != NULL && state->connected &&
-           alert->severity == FL_SEVERITY_HIGH &&
+           alert->severity == MS_SEVERITY_HIGH &&
            ((alert->id > 0 && alert->id > state->last_notified_id) ||
             (alert->id == 0 && alert->observed_boottime_ns > state->last_notified_boottime_ns));
 }
 
 void
-fl_ui_state_set_filter(struct fl_ui_state *state, enum fl_ui_filter filter)
+ms_ui_state_set_filter(struct ms_ui_state *state, enum ms_ui_filter filter)
 {
-    if (state != NULL && filter >= FL_UI_FILTER_ALL && filter <= FL_UI_FILTER_MEDIUM)
+    if (state != NULL && filter >= MS_UI_FILTER_ALL && filter <= MS_UI_FILTER_MEDIUM)
         state->filter = filter;
 }
 
 bool
-fl_ui_state_visible(const struct fl_ui_state *state, const struct fl_alert *alert)
+ms_ui_state_visible(const struct ms_ui_state *state, const struct ms_alert *alert)
 {
-    if (state == NULL || alert == NULL || state->filter == FL_UI_FILTER_ALL)
+    if (state == NULL || alert == NULL || state->filter == MS_UI_FILTER_ALL)
         return state != NULL && alert != NULL;
-    return (state->filter == FL_UI_FILTER_HIGH && alert->severity == FL_SEVERITY_HIGH) ||
-           (state->filter == FL_UI_FILTER_MEDIUM && alert->severity == FL_SEVERITY_MEDIUM);
+    return (state->filter == MS_UI_FILTER_HIGH && alert->severity == MS_SEVERITY_HIGH) ||
+           (state->filter == MS_UI_FILTER_MEDIUM && alert->severity == MS_SEVERITY_MEDIUM);
 }
 
 bool
-fl_ui_state_load(struct fl_ui_state *state, const char *path, struct fl_error *error)
+ms_ui_state_load(struct ms_ui_state *state, const char *path, struct ms_error *error)
 {
     char contents[257];
     long long last_seen;
@@ -168,7 +168,7 @@ fl_ui_state_load(struct fl_ui_state *state, const char *path, struct fl_error *e
 }
 
 bool
-fl_ui_state_save(const struct fl_ui_state *state, const char *path, struct fl_error *error)
+ms_ui_state_save(const struct ms_ui_state *state, const char *path, struct ms_error *error)
 {
     g_autofree char *directory = NULL;
     char contents[128];

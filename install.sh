@@ -157,12 +157,18 @@ bpftool version >/dev/null 2>&1 || fail "bpftool is installed but cannot run"
 
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 build_dir="$script_dir/build-install"
+
+if systemctl is-active --quiet filelessd.service; then
+    systemctl stop filelessd.service
+fi
+"$script_dir/packaging/common/migrate-legacy.sh"
+
 saved_allowlist=$(mktemp)
 had_allowlist=false
 restore_allowlist()
 {
     if [ "$had_allowlist" = true ]; then
-        install -m 0644 -o root -g root "$saved_allowlist" /etc/filelessd/allowlist.conf
+        install -m 0644 -o root -g root "$saved_allowlist" /etc/memspy/allowlist.conf
         had_allowlist=false
     fi
 }
@@ -172,8 +178,8 @@ cleanup()
     rm -f "$saved_allowlist"
 }
 trap cleanup EXIT
-if [ -f /etc/filelessd/allowlist.conf ]; then
-    cp /etc/filelessd/allowlist.conf "$saved_allowlist"
+if [ -f /etc/memspy/allowlist.conf ]; then
+    cp /etc/memspy/allowlist.conf "$saved_allowlist"
     had_allowlist=true
 fi
 
@@ -189,19 +195,42 @@ meson test -C "$build_dir" --no-suite privileged --print-errorlogs
 meson install -C "$build_dir"
 
 restore_allowlist
-systemd-sysusers /usr/lib/sysusers.d/filelessd.conf
-systemd-tmpfiles --create /usr/lib/tmpfiles.d/filelessd.conf
-usermod -aG filelessd-ui -- "$desktop_user"
+systemd-sysusers /usr/lib/sysusers.d/memspyd.conf
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf
+usermod -aG memspy-ui -- "$desktop_user"
 systemctl daemon-reload
-systemctl enable --now filelessd
-systemctl restart filelessd
+systemctl enable --now memspyd
+systemctl restart memspyd
 
-if ! systemctl is-active --quiet filelessd; then
-    journalctl -u filelessd -n 50 --no-pager >&2 || true
-    fail "filelessd did not start"
+if ! systemctl is-active --quiet memspyd; then
+    journalctl -u memspyd -n 50 --no-pager >&2 || true
+    fail "memspyd did not start"
 fi
+
+systemctl disable filelessd.service >/dev/null 2>&1 || true
+rm -f /run/filelessd/filelessd.sock \
+    /usr/bin/filelessd \
+    /usr/bin/fileless-ui \
+    /usr/libexec/filelessd/fileless.bpf.o \
+    /usr/lib/systemd/system/filelessd.service \
+    /usr/lib/tmpfiles.d/filelessd.conf \
+    /usr/lib/sysusers.d/filelessd.conf \
+    /usr/share/applications/org.fileless.DetectorUI.desktop \
+    /usr/share/fileless-detector/fileless-ui.css \
+    /usr/share/icons/hicolor/scalable/status/fileless-healthy-symbolic.svg \
+    /usr/share/icons/hicolor/scalable/status/fileless-medium-symbolic.svg \
+    /usr/share/icons/hicolor/scalable/status/fileless-high-symbolic.svg \
+    /usr/share/icons/hicolor/scalable/status/fileless-offline-symbolic.svg \
+    /usr/share/man/man1/fileless-ui.1 \
+    /usr/share/man/man1/fileless-ui.1.gz \
+    /usr/share/man/man8/filelessd.8 \
+    /usr/share/man/man8/filelessd.8.gz \
+    /etc/xdg/autostart/org.fileless.DetectorUI.desktop
+rmdir /run/filelessd /usr/libexec/filelessd /usr/share/fileless-detector 2>/dev/null || true
+groupdel filelessd-ui >/dev/null 2>&1 || true
+systemctl daemon-reload
 
 echo
 echo "MemSpy is installed and running."
 echo "Desktop integration: $desktop_environment"
-echo "Log out and back in as $desktop_user, then run: fileless-ui"
+echo "Log out and back in as $desktop_user, then run: memspy-ui"

@@ -1,7 +1,7 @@
 #include <linux/bpf.h>
 #include <bpf/bpf_helpers.h>
 
-#include "fileless_shared.h"
+#include "memspy_shared.h"
 
 struct syscall_enter {
     unsigned long long unused;
@@ -39,8 +39,8 @@ emit(void *context, const struct pending_call *call, long result)
 {
     __u64 pid_tgid = bpf_get_current_pid_tgid();
     __u64 uid_gid = bpf_get_current_uid_gid();
-    struct fl_kernel_event event = {
-        .abi_version = FL_KERNEL_EVENT_ABI,
+    struct ms_kernel_event event = {
+        .abi_version = MS_KERNEL_EVENT_ABI,
         .kind = call->kind,
         .pid = pid_tgid >> 32,
         .uid = uid_gid,
@@ -66,7 +66,7 @@ SEC("tracepoint/syscalls/sys_enter_memfd_create")
 int enter_memfd_create(struct syscall_enter *context)
 {
     (void)context;
-    return remember(FL_KERNEL_MEMFD_CREATE, 0, 0);
+    return remember(MS_KERNEL_MEMFD_CREATE, 0, 0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_memfd_create")
@@ -74,7 +74,7 @@ int exit_memfd_create(struct syscall_exit *context)
 {
     __u64 key = bpf_get_current_pid_tgid();
     struct pending_call *call = bpf_map_lookup_elem(&pending, &key);
-    if (call != NULL && call->kind == FL_KERNEL_MEMFD_CREATE && context->result >= 0)
+    if (call != NULL && call->kind == MS_KERNEL_MEMFD_CREATE && context->result >= 0)
         emit(context, call, context->result);
     bpf_map_delete_elem(&pending, &key);
     return 0;
@@ -83,7 +83,7 @@ int exit_memfd_create(struct syscall_exit *context)
 SEC("tracepoint/syscalls/sys_enter_process_vm_writev")
 int enter_process_vm_writev(struct syscall_enter *context)
 {
-    return remember(FL_KERNEL_PROCESS_VM_WRITE, (__u32)context->args[0], 0);
+    return remember(MS_KERNEL_PROCESS_VM_WRITE, (__u32)context->args[0], 0);
 }
 
 SEC("tracepoint/syscalls/sys_exit_process_vm_writev")
@@ -91,7 +91,7 @@ int exit_process_vm_writev(struct syscall_exit *context)
 {
     __u64 key = bpf_get_current_pid_tgid();
     struct pending_call *call = bpf_map_lookup_elem(&pending, &key);
-    if (call != NULL && call->kind == FL_KERNEL_PROCESS_VM_WRITE && context->result > 0)
+    if (call != NULL && call->kind == MS_KERNEL_PROCESS_VM_WRITE && context->result > 0)
         emit(context, call, context->result);
     bpf_map_delete_elem(&pending, &key);
     return 0;
@@ -100,8 +100,8 @@ int exit_process_vm_writev(struct syscall_exit *context)
 SEC("tracepoint/syscalls/sys_enter_ptrace")
 int enter_ptrace(struct syscall_enter *context)
 {
-    if (fl_ptrace_request_modifies(context->args[0]))
-        return remember(FL_KERNEL_PTRACE_WRITE, (__u32)context->args[1], context->args[0]);
+    if (ms_ptrace_request_modifies(context->args[0]))
+        return remember(MS_KERNEL_PTRACE_WRITE, (__u32)context->args[1], context->args[0]);
     return 0;
 }
 
@@ -110,7 +110,7 @@ int exit_ptrace(struct syscall_exit *context)
 {
     __u64 key = bpf_get_current_pid_tgid();
     struct pending_call *call = bpf_map_lookup_elem(&pending, &key);
-    if (call != NULL && call->kind == FL_KERNEL_PTRACE_WRITE && context->result >= 0)
+    if (call != NULL && call->kind == MS_KERNEL_PTRACE_WRITE && context->result >= 0)
         emit(context, call, context->result);
     bpf_map_delete_elem(&pending, &key);
     return 0;
@@ -119,7 +119,7 @@ int exit_ptrace(struct syscall_exit *context)
 SEC("tracepoint/sched/sched_process_exec")
 int process_exec(void *context)
 {
-    const struct pending_call call = {.kind = FL_KERNEL_EXEC};
+    const struct pending_call call = {.kind = MS_KERNEL_EXEC};
     emit(context, &call, 0);
     return 0;
 }
@@ -127,7 +127,7 @@ int process_exec(void *context)
 SEC("tracepoint/sched/sched_process_fork")
 int process_fork(void *context)
 {
-    const struct pending_call call = {.kind = FL_KERNEL_FORK};
+    const struct pending_call call = {.kind = MS_KERNEL_FORK};
     emit(context, &call, 0);
     return 0;
 }

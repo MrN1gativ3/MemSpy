@@ -1,26 +1,26 @@
-#ifndef FILELESS_UI_STATE_H
-#define FILELESS_UI_STATE_H
+#ifndef MEMSPY_UI_STATE_H
+#define MEMSPY_UI_STATE_H
 
-#include "fileless/alert.h"
-#include "fileless/health.h"
+#include "memspy/alert.h"
+#include "memspy/health.h"
 
-enum fl_indicator_state {
-    FL_INDICATOR_OFFLINE = 0,
-    FL_INDICATOR_HEALTHY,
-    FL_INDICATOR_MEDIUM,
-    FL_INDICATOR_HIGH,
+enum ms_indicator_state {
+    MS_INDICATOR_OFFLINE = 0,
+    MS_INDICATOR_HEALTHY,
+    MS_INDICATOR_MEDIUM,
+    MS_INDICATOR_HIGH,
 };
 
-enum fl_ui_filter {
-    FL_UI_FILTER_ALL = 0,
-    FL_UI_FILTER_HIGH,
-    FL_UI_FILTER_MEDIUM,
+enum ms_ui_filter {
+    MS_UI_FILTER_ALL = 0,
+    MS_UI_FILTER_HIGH,
+    MS_UI_FILTER_MEDIUM,
 };
 
-struct fl_ui_state {
+struct ms_ui_state {
     bool connected;
-    struct fl_health health;
-    enum fl_ui_filter filter;
+    struct ms_health health;
+    enum ms_ui_filter filter;
     int64_t last_alert_id;
     int64_t last_seen_id;
     int64_t last_notified_id;
@@ -29,18 +29,18 @@ struct fl_ui_state {
     uint64_t unread_medium;
 };
 
-void fl_ui_state_init(struct fl_ui_state *state);
-void fl_ui_state_apply_health(struct fl_ui_state *state, const struct fl_health *health);
-void fl_ui_state_disconnect(struct fl_ui_state *state);
-bool fl_ui_state_apply_alert(struct fl_ui_state *state, const struct fl_alert *alert);
-void fl_ui_state_mark_visible_read(struct fl_ui_state *state);
-void fl_ui_state_mark_notified(struct fl_ui_state *state, int64_t alert_id);
-void fl_ui_state_mark_alert_notified(struct fl_ui_state *state, const struct fl_alert *alert);
-enum fl_indicator_state fl_ui_state_indicator(const struct fl_ui_state *state);
-bool fl_ui_state_should_notify(const struct fl_ui_state *state, const struct fl_alert *alert);
-void fl_ui_state_set_filter(struct fl_ui_state *state, enum fl_ui_filter filter);
-bool fl_ui_state_visible(const struct fl_ui_state *state, const struct fl_alert *alert);
-bool fl_ui_state_load(struct fl_ui_state *state, const char *path, struct fl_error *error);
-bool fl_ui_state_save(const struct fl_ui_state *state, const char *path, struct fl_error *error);
+void ms_ui_state_init(struct ms_ui_state *state);
+void ms_ui_state_apply_health(struct ms_ui_state *state, const struct ms_health *health);
+void ms_ui_state_disconnect(struct ms_ui_state *state);
+bool ms_ui_state_apply_alert(struct ms_ui_state *state, const struct ms_alert *alert);
+void ms_ui_state_mark_visible_read(struct ms_ui_state *state);
+void ms_ui_state_mark_notified(struct ms_ui_state *state, int64_t alert_id);
+void ms_ui_state_mark_alert_notified(struct ms_ui_state *state, const struct ms_alert *alert);
+enum ms_indicator_state ms_ui_state_indicator(const struct ms_ui_state *state);
+bool ms_ui_state_should_notify(const struct ms_ui_state *state, const struct ms_alert *alert);
+void ms_ui_state_set_filter(struct ms_ui_state *state, enum ms_ui_filter filter);
+bool ms_ui_state_visible(const struct ms_ui_state *state, const struct ms_alert *alert);
+bool ms_ui_state_load(struct ms_ui_state *state, const char *path, struct ms_error *error);
+bool ms_ui_state_save(const struct ms_ui_state *state, const char *path, struct ms_error *error);
 
 #endif

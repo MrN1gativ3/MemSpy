@@ -19,13 +19,13 @@ notification_open(NotifyNotification *notification, char *action, gpointer userd
 }
 
 bool
-fl_notifications_init(void)
+ms_notifications_init(void)
 {
-    return notify_init("Fileless Detector");
+    return notify_init("MemSpy");
 }
 
 bool
-fl_notifications_show(const struct fl_alert *alert,
+ms_notifications_show(const struct ms_alert *alert,
                       void (*open_alert)(int64_t alert_id, void *userdata),
                       void *userdata)
 {
@@ -35,11 +35,11 @@ fl_notifications_show(const struct fl_alert *alert,
     char body[320];
     bool shown;
 
-    if (alert == NULL || alert->severity != FL_SEVERITY_HIGH || open_alert == NULL)
+    if (alert == NULL || alert->severity != MS_SEVERITY_HIGH || open_alert == NULL)
         return false;
     snprintf(body, sizeof body, "%s\n%s", alert->rule_id, alert->explanation);
     notification = notify_notification_new("High-severity fileless malware alert",
-                                           body, "fileless-high-symbolic");
+                                           body, "memspy-high-symbolic");
     notify_notification_set_urgency(notification, NOTIFY_URGENCY_CRITICAL);
     context = g_new0(struct notification_action, 1);
     context->alert_id = alert->id;
@@ -55,7 +55,7 @@ fl_notifications_show(const struct fl_alert *alert,
 }
 
 void
-fl_notifications_uninit(void)
+ms_notifications_uninit(void)
 {
     if (notify_is_initted())
         notify_uninit();

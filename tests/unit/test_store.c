@@ -9,19 +9,19 @@
 struct store_fixture {
     char *directory;
     char *path;
-    struct fl_store *store;
+    struct ms_store *store;
 };
 
 static void
 fixture_setup(struct store_fixture *fixture, gconstpointer user_data)
 {
-    struct fl_error error = {0};
+    struct ms_error error = {0};
 
     (void)user_data;
-    fixture->directory = g_dir_make_tmp("fileless-store-XXXXXX", NULL);
+    fixture->directory = g_dir_make_tmp("memspy-store-XXXXXX", NULL);
     g_assert_nonnull(fixture->directory);
     fixture->path = g_build_filename(fixture->directory, "alerts.db", NULL);
-    g_assert_true(fl_store_open(fixture->path, &fixture->store, &error));
+    g_assert_true(ms_store_open(fixture->path, &fixture->store, &error));
 }
 
 static void
@@ -31,7 +31,7 @@ fixture_teardown(struct store_fixture *fixture, gconstpointer user_data)
     g_autofree char *shm = g_strconcat(fixture->path, "-shm", NULL);
 
     (void)user_data;
-    fl_store_close(fixture->store);
+    ms_store_close(fixture->store);
     g_unlink(wal);
     g_unlink(shm);
     g_unlink(fixture->path);
@@ -40,10 +40,10 @@ fixture_teardown(struct store_fixture *fixture, gconstpointer user_data)
     g_free(fixture->directory);
 }
 
-static struct fl_alert
-alert_at(int64_t timestamp, enum fl_severity severity, const char *rule_id)
+static struct ms_alert
+alert_at(int64_t timestamp, enum ms_severity severity, const char *rule_id)
 {
-    struct fl_alert alert = {
+    struct ms_alert alert = {
         .timestamp_utc = timestamp,
         .observed_boottime_ns = (uint64_t)timestamp * 1000000000ULL,
         .severity = severity,
@@ -87,61 +87,61 @@ static void
 test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixture,
                                                      gconstpointer user_data)
 {
-    struct fl_error error = {0};
-    struct fl_alert first = alert_at(100, FL_SEVERITY_MEDIUM, "FL-DELETED-EXEC");
-    struct fl_alert second = alert_at(101, FL_SEVERITY_HIGH, "FL-MEMFD-EXEC");
-    struct fl_alert third = alert_at(102, FL_SEVERITY_MEDIUM, "FL-PTRACE-WRITE");
-    struct fl_alert_page page = {0};
+    struct ms_error error = {0};
+    struct ms_alert first = alert_at(100, MS_SEVERITY_MEDIUM, "DELETED_EXEC");
+    struct ms_alert second = alert_at(101, MS_SEVERITY_HIGH, "MEMFD_EXEC");
+    struct ms_alert third = alert_at(102, MS_SEVERITY_MEDIUM, "PTRACE_WRITE");
+    struct ms_alert_page page = {0};
 
     (void)user_data;
-    g_assert_true(fl_store_insert(fixture->store, &first, &error));
-    g_assert_true(fl_store_insert(fixture->store, &second, &error));
-    g_assert_true(fl_store_insert(fixture->store, &third, &error));
+    g_assert_true(ms_store_insert(fixture->store, &first, &error));
+    g_assert_true(ms_store_insert(fixture->store, &second, &error));
+    g_assert_true(ms_store_insert(fixture->store, &third, &error));
     g_assert_cmpint(first.id, >, 0);
 
-    g_assert_true(fl_store_list(fixture->store, 0, FL_SEVERITY_MEDIUM, 2, &page, &error));
+    g_assert_true(ms_store_list(fixture->store, 0, MS_SEVERITY_MEDIUM, 2, &page, &error));
     g_assert_cmpuint(page.length, ==, 2);
     g_assert_cmpint(page.items[0].id, ==, third.id);
     g_assert_cmpint(page.items[1].id, ==, second.id);
     int64_t cursor = page.next_before_id;
-    fl_alert_page_clear(&page);
+    ms_alert_page_clear(&page);
 
-    g_assert_true(fl_store_list(fixture->store, cursor, FL_SEVERITY_MEDIUM, 2, &page, &error));
+    g_assert_true(ms_store_list(fixture->store, cursor, MS_SEVERITY_MEDIUM, 2, &page, &error));
     g_assert_cmpuint(page.length, ==, 1);
     g_assert_cmpint(page.items[0].id, ==, first.id);
-    fl_alert_page_clear(&page);
+    ms_alert_page_clear(&page);
 
-    g_assert_true(fl_store_list(fixture->store, 0, FL_SEVERITY_HIGH, 2000, &page, &error));
+    g_assert_true(ms_store_list(fixture->store, 0, MS_SEVERITY_HIGH, 2000, &page, &error));
     g_assert_cmpuint(page.length, ==, 1);
-    g_assert_cmpstr(page.items[0].rule_id, ==, "FL-MEMFD-EXEC");
-    fl_alert_page_clear(&page);
+    g_assert_cmpstr(page.items[0].rule_id, ==, "MEMFD_EXEC");
+    ms_alert_page_clear(&page);
 }
 
 static void
 test_store_prunes_at_most_one_hundred(struct store_fixture *fixture, gconstpointer user_data)
 {
-    struct fl_error error = {0};
-    struct fl_alert alert = alert_at(1, FL_SEVERITY_MEDIUM, "FL-DELETED-EXEC");
+    struct ms_error error = {0};
+    struct ms_alert alert = alert_at(1, MS_SEVERITY_MEDIUM, "DELETED_EXEC");
 
     (void)user_data;
     for (unsigned int index = 0; index < 101U; ++index)
-        g_assert_true(fl_store_insert(fixture->store, &alert, &error));
-    g_assert_cmpuint(fl_store_prune_before(fixture->store, 2, 100, &error), ==, 100);
-    g_assert_cmpuint(fl_store_prune_before(fixture->store, 2, 100, &error), ==, 1);
+        g_assert_true(ms_store_insert(fixture->store, &alert, &error));
+    g_assert_cmpuint(ms_store_prune_before(fixture->store, 2, 100, &error), ==, 100);
+    g_assert_cmpuint(ms_store_prune_before(fixture->store, 2, 100, &error), ==, 1);
 }
 
 static void
 test_store_preserves_corrupt_database(void)
 {
-    g_autofree char *directory = g_dir_make_tmp("fileless-corrupt-XXXXXX", NULL);
+    g_autofree char *directory = g_dir_make_tmp("memspy-corrupt-XXXXXX", NULL);
     g_autofree char *path = g_build_filename(directory, "alerts.db", NULL);
-    struct fl_store *store = NULL;
-    struct fl_error error = {0};
+    struct ms_store *store = NULL;
+    struct ms_error error = {0};
     g_autofree char *contents = NULL;
     gsize length = 0;
 
     g_assert_true(g_file_set_contents(path, "not a sqlite database", -1, NULL));
-    g_assert_false(fl_store_open(path, &store, &error));
+    g_assert_false(ms_store_open(path, &store, &error));
     g_assert_null(store);
     g_assert_true(g_file_get_contents(path, &contents, &length, NULL));
     g_assert_cmpuint(length, ==, strlen("not a sqlite database"));
