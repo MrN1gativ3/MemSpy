@@ -29,7 +29,10 @@ main(int argc, char **argv)
         if (write(target, buffer, (size_t)count) != count)
             return 1;
     }
-    if (count < 0 || fchmod(target, 0700) != 0 || unlink(path) != 0 || lseek(target, 0, SEEK_SET) < 0)
+    if (count < 0 || fchmod(target, 0700) != 0 || close(target) != 0)
+        return 1;
+    target = open(path, O_RDONLY);
+    if (target < 0 || unlink(path) != 0)
         return 1;
     setenv("MEMSPY_FIXTURE_CHILD", "1", 1);
     syscall(SYS_execveat, target, "", argv, environ, AT_EMPTY_PATH);
