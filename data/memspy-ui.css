@@ -3,6 +3,14 @@
 .memspy-health-high { border-left: 4px solid #C01C28; }
 .memspy-health-offline { border-left: 4px solid #77767B; }
 
+.memspy-health-healthy .memspy-state-icon { color: #2EC27E; }
+.memspy-health-medium .memspy-state-icon,
+.memspy-health-medium .memspy-alert-icon { color: #E5A50A; }
+.memspy-health-high .memspy-state-icon,
+.memspy-health-high .memspy-alert-icon { color: #C01C28; }
+.memspy-health-offline .memspy-state-icon { color: #77767B; }
+.memspy-empty-icon { color: #3584E4; }
+
 .memspy-status-banner {
   padding: 12px;
   border-radius: 8px;

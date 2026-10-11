@@ -88,6 +88,31 @@ has_label_text(GtkWidget *widget, const char *text)
     return search.found;
 }
 
+struct class_search {
+    const char *name;
+    unsigned int count;
+};
+
+static void
+count_style_class(GtkWidget *widget, gpointer userdata)
+{
+    struct class_search *search = userdata;
+
+    if (gtk_style_context_has_class(gtk_widget_get_style_context(widget), search->name))
+        ++search->count;
+    if (GTK_IS_CONTAINER(widget))
+        gtk_container_forall(GTK_CONTAINER(widget), count_style_class, search);
+}
+
+static unsigned int
+style_class_count(GtkWidget *widget, const char *name)
+{
+    struct class_search search = {.name = name};
+
+    count_style_class(widget, &search);
+    return search.count;
+}
+
 static void
 test_window_states_filters_and_accessibility(void)
 {
@@ -107,6 +132,10 @@ test_window_states_filters_and_accessibility(void)
     g_assert_cmpstr(gtk_header_bar_get_subtitle(GTK_HEADER_BAR(titlebar)), ==,
                     "Fileless activity monitor");
     g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 0"));
+    g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
+                                       "memspy-state-icon"), ==, 1);
+    g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
+                                       "memspy-empty-icon"), ==, 1);
     ms_window_set_loading(window);
     g_assert_cmpstr(ms_window_status_text(window), ==, "Connecting to detector…");
     g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
@@ -121,6 +150,8 @@ test_window_states_filters_and_accessibility(void)
                                  "Monitoring the last 30 days"));
     g_assert_true(ms_window_add_alert(window, &high));
     g_assert_false(ms_window_add_alert(window, &high));
+    g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
+                                       "memspy-alert-icon"), ==, 2);
     g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 2"));
     g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "High 1"));
     g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "Medium 1"));

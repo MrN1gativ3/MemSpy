@@ -137,6 +137,9 @@ create_alert_row(struct alert_view *view)
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *severity_icon = gtk_image_new_from_icon_name(
+        view->alert.severity == MS_SEVERITY_HIGH ?
+        "memspy-high-symbolic" : "memspy-medium-symbolic", GTK_ICON_SIZE_BUTTON);
     GtkWidget *severity_label = gtk_label_new(severity);
     GtkWidget *rule_label = gtk_label_new(view->alert.rule_id);
     GtkWidget *timestamp;
@@ -158,10 +161,13 @@ create_alert_row(struct alert_view *view)
     if (date != NULL)
         g_date_time_unref(date);
     g_free(time_text);
+    add_class(severity_icon, "memspy-alert-icon");
+    atk_object_set_role(gtk_widget_get_accessible(severity_icon), ATK_ROLE_REDUNDANT_OBJECT);
     add_class(severity_label, "memspy-severity");
     add_class(rule_label, "memspy-rule-id");
     gtk_label_set_xalign(GTK_LABEL(severity_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(rule_label), 0.0F);
+    gtk_box_pack_start(GTK_BOX(heading), severity_icon, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), severity_label, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), rule_label, true, true, 0);
     gtk_box_pack_end(GTK_BOX(heading), timestamp, false, false, 0);
@@ -240,6 +246,7 @@ ms_window_new(GtkApplication *application)
     window->status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     window->status_icon = gtk_image_new_from_icon_name("memspy-offline-symbolic",
                                                        GTK_ICON_SIZE_BUTTON);
+    add_class(window->status_icon, "memspy-state-icon");
     window->spinner = gtk_spinner_new();
     GtkWidget *status_copy = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
     window->status_label = gtk_label_new("");
@@ -259,6 +266,7 @@ ms_window_new(GtkApplication *application)
 
     filters = create_filters(window);
     add_class(root, "memspy-content");
+    add_class(placeholder_icon, "memspy-empty-icon");
     add_class(window->empty_title, "memspy-empty-title");
     add_class(window->empty_detail, "memspy-empty-detail");
     gtk_box_pack_start(GTK_BOX(window->empty_box), placeholder_icon, false, false, 0);

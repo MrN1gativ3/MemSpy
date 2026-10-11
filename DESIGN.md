@@ -54,7 +54,7 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 - **Usage scene:** An always-available panel indicator and an occasional 440×560 desktop window, often opened because a high-severity notification fired.
 - **Register:** Product. Familiar GTK desktop behavior and state clarity lead visual expression.
 - **Memorable signature:** The alert evidence rail pairs semantic color with an explicit High or Medium label and rule ID.
-- **Restraint:** Window chrome, typography, focus, menus, buttons, scrolling, and disclosure behavior remain GTK native; Plasma uses the host GTK theme bridge.
+- **Restraint:** Window chrome, typography, focus, menus, buttons, scrolling, and disclosure behavior remain GTK native; Plasma uses the host GTK theme bridge. The panel indicator remains monochrome while in-window icons use restrained semantic color.
 - **Anti-references:** No SOC wallboard, neon terminal, card-grid SaaS dashboard, charts, gradients, glass effects, or red-dominant background. Those styles exaggerate activity and obscure local health.
 - **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
 
@@ -100,7 +100,7 @@ There are no product forms or destructive dialogs. Persistent connection and hea
 
 ### Iconography
 
-Four symbolic SVGs—healthy, medium, high, and offline—use a shield silhouette with distinct internal marks. The shell/theme supplies foreground color where supported. Status text remains available in the menu and window; icon color is never the only signal.
+Four symbolic SVGs—healthy, medium, high, and offline—use a shield silhouette with distinct internal marks. The shell/theme supplies the panel indicator foreground so it remains native and monochrome. Inside the alert window, the same symbols use the established healthy green, medium amber, high red, and offline gray tokens; the empty-state shield uses accent blue. Every colored icon remains paired with status or severity text, so color is never the only signal.
 
 ### Motion
 
