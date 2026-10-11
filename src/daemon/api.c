@@ -306,11 +306,11 @@ client_worker(gpointer data)
             json_object *reply = json_object_new_object();
             json_object_object_add(reply, "v", json_object_new_int(FL_PROTOCOL_VERSION));
             json_object_object_add(reply, "ok", json_object_new_boolean(true));
-            session_send_json(session, reply);
-            json_object_put(reply);
             g_mutex_lock(&session->api->mutex);
             session->subscribed = true;
+            session_send_json(session, reply);
             g_mutex_unlock(&session->api->mutex);
+            json_object_put(reply);
         } else {
             send_error(session->descriptor, "unknown_operation");
         }
