@@ -168,6 +168,15 @@ on_sample(void *context, int cpu, void *data, __u32 size)
     if (size != sizeof(struct ms_kernel_event) ||
         !ms_sensor_observation_from_event(data, &observation, &error)) {
         ++sensor->stats.invalid_events;
+        sensor->stats.last_event_size = size;
+        if (size >= sizeof(event->abi_version))
+            memcpy(&sensor->stats.last_abi_version, data, sizeof(event->abi_version));
+        if (size >= offsetof(struct ms_kernel_event, kind) + sizeof(event->kind))
+            memcpy(&sensor->stats.last_kind, (const char *)data + offsetof(struct ms_kernel_event, kind),
+                   sizeof(event->kind));
+        if (size >= offsetof(struct ms_kernel_event, pid) + sizeof(event->pid))
+            memcpy(&sensor->stats.last_pid, (const char *)data + offsetof(struct ms_kernel_event, pid),
+                   sizeof(event->pid));
         return;
     }
     ++sensor->stats.received_events;
