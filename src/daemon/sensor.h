@@ -13,10 +13,6 @@ struct ms_sensor_stats {
     uint64_t received_events;
     uint64_t lost_events;
     uint64_t invalid_events;
-    uint32_t last_event_size;
-    uint16_t last_abi_version;
-    uint16_t last_kind;
-    uint32_t last_pid;
 };
 
 struct ms_sensor;
