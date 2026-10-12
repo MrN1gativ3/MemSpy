@@ -3,6 +3,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#define MS_UI_MAX_CONTENT_WIDTH 960
+
 struct alert_view {
     struct ms_alert alert;
     GtkWidget *row;
@@ -40,6 +42,19 @@ static void
 add_class(GtkWidget *widget, const char *name)
 {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), name);
+}
+
+static void
+constrain_content_width(GtkWidget *widget, GtkAllocation *allocation, gpointer userdata)
+{
+    GtkWidget *content = userdata;
+    int margin = MAX((allocation->width - MS_UI_MAX_CONTENT_WIDTH) / 2, 0);
+
+    (void)widget;
+    if (gtk_widget_get_margin_start(content) != margin) {
+        gtk_widget_set_margin_start(content, margin);
+        gtk_widget_set_margin_end(content, margin);
+    }
 }
 
 static gboolean
@@ -388,6 +403,7 @@ ms_window_new(GtkApplication *application)
     window->response_label = gtk_label_new("");
     window->response_error = gtk_label_new("");
     window->response_switch = gtk_switch_new();
+    gtk_widget_set_valign(window->response_switch, GTK_ALIGN_CENTER);
     gtk_label_set_xalign(GTK_LABEL(response_title), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(window->response_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(window->response_error), 0.0F);
@@ -432,6 +448,8 @@ ms_window_new(GtkApplication *application)
     gtk_box_pack_start(GTK_BOX(root), scroller, true, true, 0);
     gtk_container_set_border_width(GTK_CONTAINER(root), 12);
     gtk_container_add(GTK_CONTAINER(window->window), root);
+    g_signal_connect(window->window, "size-allocate",
+                     G_CALLBACK(constrain_content_width), root);
     ms_window_set_loading(window);
     update_empty_state(window);
     gtk_widget_show_all(root);

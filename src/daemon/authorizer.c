@@ -7,7 +7,7 @@
 #include <string.h>
 
 #define MS_POLKIT_ACTION "org.memspy.response.configure"
-#define MS_POLKIT_TIMEOUT_MS 30000
+#define MS_POLKIT_TIMEOUT_MS 120000
 
 struct ms_authorizer {
     GDBusConnection *system_bus;
@@ -79,7 +79,12 @@ ms_authorizer_new(void)
 static void
 map_bus_error(const GError *bus_error, struct ms_error *error)
 {
-    if (g_error_matches(bus_error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT))
+    g_warning("PolicyKit authorization request failed: %s",
+              bus_error == NULL ? "unknown D-Bus error" : bus_error->message);
+    if (g_error_matches(bus_error, G_IO_ERROR, G_IO_ERROR_TIMED_OUT) ||
+        g_error_matches(bus_error, G_DBUS_ERROR, G_DBUS_ERROR_NO_REPLY) ||
+        g_error_matches(bus_error, G_DBUS_ERROR, G_DBUS_ERROR_TIMEOUT) ||
+        g_error_matches(bus_error, G_DBUS_ERROR, G_DBUS_ERROR_TIMED_OUT))
         set_error(error, "authorization_timeout", "administrator authorization timed out");
     else if (g_error_matches(bus_error, G_IO_ERROR, G_IO_ERROR_CANCELLED))
         set_error(error, "authorization_cancelled", "administrator authorization was cancelled");
