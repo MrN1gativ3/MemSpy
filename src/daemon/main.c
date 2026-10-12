@@ -57,7 +57,7 @@ static int
 check_response(const char *pin_directory)
 {
     g_autofree char *probe_directory =
-        g_strdup_printf("%s.probe-%ld", pin_directory, (long)getpid());
+        g_strdup_printf("%s_probe_%ld", pin_directory, (long)getpid());
     g_autoptr(GArray) keys = g_array_new(false, false, sizeof(struct ms_launcher_key));
     struct ms_enforcer *enforcer = NULL;
     struct ms_enforcer_status status = {0};

@@ -151,7 +151,9 @@ test('build-portability', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_build_portability.sh',
             meson.project_source_root() / 'meson.build',
             meson.project_source_root() / 'src/daemon/store.c',
-            meson.project_source_root() / 'src/bpf/memspy_enforce.bpf.c'])
+            meson.project_source_root() / 'src/bpf/memspy_enforce.bpf.c',
+            meson.project_source_root() / 'src/daemon/enforcer.c',
+            meson.project_source_root() / 'src/daemon/main.c'])
 
 ui_state_test = executable(
   'test-ui-state',

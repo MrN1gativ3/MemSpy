@@ -29,6 +29,6 @@ for name in \
     enter_execve enter_execveat block_memfd_exec \
     response_enabled launcher_allowlist pending_exec enforce_events \
     enforce_counters enforce_scratch; do
-    rm -f -- "$pin_dir/$name" "$pin_dir/$name.new"
+    rm -f -- "$pin_dir/$name" "$pin_dir/${name}_new"
 done
 rmdir -- "$pin_dir" 2>/dev/null || true

@@ -202,7 +202,7 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
 static char *
 pin_path(const char *directory, const char *name, bool staged)
 {
-    return g_strdup_printf("%s/%s%s", directory, name, staged ? ".new" : "");
+    return g_strdup_printf("%s/%s%s", directory, name, staged ? "_new" : "");
 }
 
 static bool
