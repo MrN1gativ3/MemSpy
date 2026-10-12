@@ -235,8 +235,7 @@ src/daemon/       privileged daemon, policy, storage, and local API
 src/ui/           unprivileged GTK indicator and alert window
 test-samples/     benign detector validation programs
 tests/            unit, integration, UI, packaging, and VM tests
-packaging/        systemd, desktop, Ubuntu, Fedora, and Arch packaging
-debian/           Debian package metadata
+packaging/common/ shared systemd, desktop, PolicyKit, migration, and cleanup assets
 config/           default allowlist
 docs/             man pages, design specification, and implementation plan
 ```
@@ -249,4 +248,4 @@ Before opening a pull request, run the non-privileged test suite. Changes to pro
 
 ## License and release metadata
 
-No project license has been selected yet. The package manifests also contain placeholder maintainer addresses and project URLs. Before publishing release packages or accepting outside contributions, add a `LICENSE` file and replace every `example.invalid` and `invalid.example` value with the real project metadata.
+No project license has been selected yet. Before publishing releases or accepting outside contributions, add a `LICENSE` file and replace placeholder project metadata with the real values.

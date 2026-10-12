@@ -389,12 +389,6 @@ git commit -m "Add response control and process evidence UI"
 - Modify: `meson.build`
 - Modify: `install.sh`
 - Modify: `packaging/common/memspyd.service`
-- Modify: `debian/control`
-- Modify: `debian/memspyd.install`
-- Modify: `debian/memspyd.postrm`
-- Modify: `packaging/rpm/memspyd.spec`
-- Modify: `packaging/arch/PKGBUILD`
-- Modify: `packaging/arch/memspyd.install`
 - Modify: `.github/workflows/ci.yml`
 - Modify: `README.md`
 - Modify: `docs/memspyd.8`
@@ -411,7 +405,7 @@ git commit -m "Add response control and process evidence UI"
 
 - [ ] **Step 1: Write failing package contract tests**
 
-Assert every new artifact and dependency is installed for Debian/Ubuntu, Fedora and Arch; config files are preserved; Polkit action ID is exact; the service has `CAP_BPF`, `CAP_PERFMON` and a narrow `/sys/fs/bpf/memspy` writable path; cleanup refuses any path outside that directory.
+Assert every new artifact and dependency is installed by the source installer on Debian/Ubuntu, Fedora and Arch; config files are preserved; Polkit action ID is exact; the service has `CAP_BPF`, `CAP_PERFMON` and a narrow `/sys/fs/bpf/memspy` writable path; cleanup refuses any path outside that directory.
 
 - [ ] **Step 2: Run package tests and confirm failure**
 
@@ -419,7 +413,7 @@ Run: `meson test -C build installer ci-dependencies --print-errorlogs && sh test
 
 Expected: FAIL because response artifacts are not packaged.
 
-- [ ] **Step 3: Add Polkit, service and package integration**
+- [ ] **Step 3: Add Polkit and service integration**
 
 Install `org.memspy.response.configure` with `auth_admin_keep` defaults. Add `polkit-gobject-1` build/runtime packages. Preserve the existing hardening directives and grant only capabilities and paths demonstrated by the enforcement tests.
 
@@ -440,7 +434,7 @@ Expected: all PASS.
 - [ ] **Step 7: Commit**
 
 ```bash
-git add packaging config uninstall.sh install.sh meson.build debian .github/workflows/ci.yml README.md docs tests/package
+git add packaging/common packaging/ubuntu config uninstall.sh install.sh meson.build .github/workflows/ci.yml README.md docs tests/package
 git commit -m "Package and document response mode"
 ```
 

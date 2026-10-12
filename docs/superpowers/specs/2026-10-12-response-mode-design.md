@@ -152,7 +152,7 @@ Logs must not contain argument contents by default. They may contain rule IDs, n
 
 ## Packaging and Installation
 
-Meson builds and installs a separate enforcement BPF object and skeleton, the Polkit action, the response allowlist, and updated documentation. Package installers add the Polkit development/runtime dependency and required BPF build inputs for Ubuntu/Debian, Fedora, and Arch.
+Meson builds and installs a separate enforcement BPF object and skeleton, the Polkit action, the response allowlist, and updated documentation. The source installer adds the Polkit development/runtime dependency and required BPF build inputs for Ubuntu/Debian, Fedora, and Arch.
 
 The systemd unit receives only the capabilities and writable paths required to load, attach, pin, and manage the BPF programs. Existing filesystem, network, namespace, and syscall restrictions remain unless a verified enforcement operation requires a narrowly scoped exception.
 
@@ -161,7 +161,7 @@ The installer prints one of two results:
 - `Detection and response available`; or
 - `Detection available; response unavailable: [specific reason]`.
 
-Installation succeeds in both cases. Upgrade preserves `/etc/memspy` configuration, `/var/lib/memspy` state and alert history. Uninstall removes packaged files and MemSpy-owned pinned BPF objects but does not remove alert history unless the user explicitly requests data removal.
+Installation succeeds in both cases. Re-running `install.sh` preserves `/etc/memspy` configuration, `/var/lib/memspy` state and alert history. `uninstall.sh` removes installed files and MemSpy-owned pinned BPF objects but does not remove alert history unless the user explicitly requests data removal.
 
 ## Verification
 

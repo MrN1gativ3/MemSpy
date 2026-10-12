@@ -2,7 +2,6 @@
 set -eu
 
 build_dir=${1:-build-package}
-root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 
@@ -54,18 +53,6 @@ if "$stage/usr/libexec/memspy/cleanup-bpf" /tmp/not-memspy >/dev/null 2>&1; then
     echo "cleanup helper accepted a path outside /sys/fs/bpf/memspy" >&2
     exit 1
 fi
-
-grep -q 'libpolkit-gobject-1-dev' "$root/debian/control"
-grep -q 'policykit-1' "$root/debian/control"
-grep -q 'memspy_enforce.bpf.o' "$root/debian/memspyd.install"
-grep -q 'response-allowlist.conf' "$root/debian/memspyd.install"
-grep -q 'org.memspy.response.policy' "$root/debian/memspyd.install"
-grep -q 'cleanup-bpf' "$root/debian/memspyd.install"
-grep -q 'pkgconfig(polkit-gobject-1)' "$root/packaging/rpm/memspyd.spec"
-grep -q '^Requires:.*polkit' "$root/packaging/rpm/memspyd.spec"
-grep -q '%config(noreplace).*response-allowlist.conf' "$root/packaging/rpm/memspyd.spec"
-grep -q "'polkit'" "$root/packaging/arch/PKGBUILD"
-grep -q "^backup=.*etc/memspy/response-allowlist.conf" "$root/packaging/arch/PKGBUILD"
 
 for icon in healthy medium high offline; do
     test -f "$stage/usr/share/icons/hicolor/scalable/status/memspy-$icon-symbolic.svg"
