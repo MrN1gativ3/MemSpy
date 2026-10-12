@@ -9,6 +9,7 @@
 #include "api.h"
 #include "authorizer.h"
 #include "enforcer.h"
+#include "journal.h"
 #include "policy.h"
 #include "response_config.h"
 #include "sensor.h"
@@ -31,6 +32,8 @@ struct ms_app {
     size_t queue_length;
     uint64_t reported_pressure;
     uint64_t reported_lost;
+    uint64_t reported_incomplete;
+    int64_t last_journal_warning;
     int64_t next_prune_utc;
     volatile sig_atomic_t stopping;
     bool injected;
@@ -157,6 +160,28 @@ publish_alert(struct ms_app *app, const struct ms_alert *alert)
         ms_api_publish_alert(app->api, alert);
 }
 
+static void
+publish_journal(struct ms_app *app, const struct ms_alert *alert)
+{
+    struct ms_error error = {0};
+    bool success;
+    int64_t now;
+
+    if (app->injected)
+        success = app->dependencies.journal_alert == NULL ||
+            app->dependencies.journal_alert(app->dependencies.userdata, alert, &error);
+    else
+        success = ms_journal_alert(alert, &error);
+    if (success)
+        return;
+    apply_health(app, MS_HEALTH_JOURNAL_FAILED, 1);
+    now = time(NULL);
+    if (app->last_journal_warning == 0 || now - app->last_journal_warning >= 60) {
+        g_warning("structured journal output failed: %s", error.message);
+        app->last_journal_warning = now;
+    }
+}
+
 static bool
 queue_push(struct ms_app *app, const struct ms_alert *alert)
 {
@@ -185,7 +210,8 @@ accept_alert(struct ms_app *app, const struct ms_alert *alert)
     } else if (!store_insert(app, &stored, &error)) {
         apply_health(app, MS_HEALTH_STORE_FAILED, 1);
         queue_push(app, &stored);
-    }
+    } else
+        publish_journal(app, &stored);
     publish_alert(app, &stored);
 }
 
@@ -201,6 +227,7 @@ drain_queue(struct ms_app *app)
                 apply_health(app, MS_HEALTH_STORE_FAILED, 1);
             return;
         }
+        publish_journal(app, alert);
         app->queue_head = (app->queue_head + 1) % MS_APP_QUEUE_CAPACITY;
         --app->queue_length;
     }
@@ -530,6 +557,11 @@ ms_app_run(struct ms_app *app)
         if (stats.lost_events > app->reported_lost) {
             apply_health(app, MS_HEALTH_EVENT_LOST, stats.lost_events - app->reported_lost);
             app->reported_lost = stats.lost_events;
+        }
+        if (stats.incomplete_observations > app->reported_incomplete) {
+            apply_health(app, MS_HEALTH_OBSERVATION_INCOMPLETE,
+                         stats.incomplete_observations - app->reported_incomplete);
+            app->reported_incomplete = stats.incomplete_observations;
         }
         ms_app_maintain(app, time(NULL));
     }

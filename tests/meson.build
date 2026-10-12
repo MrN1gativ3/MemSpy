@@ -57,12 +57,25 @@ api_test = executable(
   '../src/daemon/api.c',
   '../src/daemon/authorizer.c',
   '../src/daemon/store.c',
-  '../src/ui/client.c',
-  include_directories: [inc, daemon_inc, include_directories('../src/ui')],
+  '../src/common/client.c',
+  include_directories: [inc, daemon_inc, include_directories('../src/common')],
   dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep],
 )
 
 test('api', api_test, timeout: 15)
+
+cli_output_test = executable(
+  'test-cli-output',
+  'unit/test_cli_output.c',
+  '../src/cli/output.c',
+  '../src/common/alert_json.c',
+  include_directories: [inc, include_directories('../src/cli'), include_directories('../src/common'), daemon_inc],
+  dependencies: [glib_dep, json_c_dep],
+)
+
+test('cli-output', cli_output_test)
+test('cli-integration', find_program('sh'),
+     args: [meson.current_source_dir() / 'integration/test_cli.sh', memspyctl])
 
 sensor_abi_test = executable(
   'test-sensor-abi',
@@ -107,6 +120,16 @@ sensor_test = executable(
 
 test('sensor', sensor_test)
 
+process_evidence_test = executable(
+  'test-process-evidence',
+  'unit/test_process_evidence.c',
+  '../src/daemon/process_evidence.c',
+  include_directories: [inc, daemon_inc],
+  dependencies: [glib_dep],
+)
+
+test('process-evidence', process_evidence_test)
+
 daemon_test = executable(
   'test-daemon',
   'unit/test_daemon.c',
@@ -121,15 +144,27 @@ daemon_test = executable(
   '../src/daemon/process_evidence.c',
   '../src/daemon/response_config.c',
   '../src/daemon/authorizer.c',
+  '../src/daemon/journal.c',
   '../src/common/alert_json.c',
   bpf_skeleton,
   enforce_bpf_skeleton,
   include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],
-  dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep],
+  dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep, systemd_dep],
   c_args: ['-Wno-overlength-strings'],
 )
 
 test('daemon', daemon_test)
+
+journal_test = executable(
+  'test-journal',
+  'unit/test_journal.c',
+  '../src/daemon/journal.c',
+  '../src/common/alert_json.c',
+  include_directories: [inc, daemon_inc],
+  dependencies: [json_c_dep, glib_dep, systemd_dep],
+)
+
+test('journal', journal_test)
 
 test('daemon-integration', find_program('sh'),
      args: [meson.current_source_dir() / 'integration/test_daemon.sh', memspyd])
@@ -155,6 +190,7 @@ test('build-portability', find_program('sh'),
             meson.project_source_root() / 'src/daemon/enforcer.c',
             meson.project_source_root() / 'src/daemon/main.c'])
 
+if desktop_enabled
 ui_state_test = executable(
   'test-ui-state',
   'unit/test_ui_state.c',
@@ -176,8 +212,9 @@ ui_test = executable(
 )
 
 test('ui', ui_test)
+endif
 
-foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'ordinary_exec']
+foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'ordinary_exec']
   executable(fixture, '../test-samples/' + fixture + '.c', install: false)
 endforeach
 

@@ -49,7 +49,7 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 
 ### Product context and register
 
-- **Audience and primary job:** A Linux workstation user or security operator needs to see whether local monitoring is working and inspect recent high-confidence alerts.
+- **Audience and primary job:** A Linux workstation user or server operator needs to verify local monitoring and investigate recent high-confidence alerts. Headless operators use `memspyctl`; desktop users retain the GTK dashboard as the primary interface.
 - **Target market and evidence:** GNOME and KDE Plasma on the approved Ubuntu/Debian, Fedora, and Arch support matrix.
 - **Locale and language policy:** English in version one. User-facing times follow the desktop locale and local timezone; protocol data remains typed.
 - **Usage scene:** An always-available panel indicator and an occasional 440×560 desktop window, often opened because a high-severity notification fired.
@@ -59,7 +59,7 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 - **Anti-references:** No SOC wallboard, neon terminal, card-grid SaaS dashboard, charts, gradients, glass effects, or red-dominant background. Those styles exaggerate activity and obscure local health.
 - **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
 
-The canonical capability owners are GTK native controls for buttons, switches, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface and response presentation; and `src/ui/indicator.c` for the panel menu. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
+The canonical capability owners are GTK native controls for buttons, switches, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface and response presentation; and `src/ui/indicator.c` for the panel menu. `memspyctl` is the native headless interface and shares the daemon client and canonical JSON codec; it does not define GTK behavior. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
 
 ## Colors
 
@@ -93,7 +93,7 @@ Filters are GTK toggle/radio-style buttons labeled All, High, and Medium with vi
 
 ### Navigation and data display
 
-There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, process, executable, and a text outcome badge (`Blocked` or `Detected`) before a keyboard-operable `Process details` disclosure. Details group only meaningful selectable fields under Identity, Execution, optional Target, and Detection headings. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
+There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, process, executable, and a text outcome badge (`Blocked` or `Detected`) before a keyboard-operable `Process details` disclosure. Details group only meaningful selectable fields under Identity, Execution, optional Workload, optional Target, and Detection headings. Workload holds systemd unit, cgroup, container, terminal/SSH-origin, and namespace evidence without guessing absent values. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
 
 ### Forms and overlays
 

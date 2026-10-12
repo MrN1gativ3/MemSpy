@@ -16,6 +16,11 @@
 #define MS_PATH_BYTES 4096U
 #define MS_SHA256_BYTES 65U
 #define MS_EVIDENCE_BYTES 1024U
+#define MS_UNIT_BYTES 256U
+#define MS_CGROUP_BYTES 1024U
+#define MS_CONTAINER_ID_BYTES 129U
+#define MS_CONTAINER_RUNTIME_BYTES 32U
+#define MS_TTY_BYTES 64U
 
 enum ms_severity {
     MS_SEVERITY_MEDIUM = 1,
@@ -46,8 +51,21 @@ struct ms_alert {
     char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
     char parent_sha256[MS_SHA256_BYTES];
+    pid_t grandparent_pid;
+    char grandparent_comm[MS_COMM_BYTES];
+    char grandparent_exe[MS_PATH_BYTES];
+    char systemd_unit[MS_UNIT_BYTES];
+    char cgroup_path[MS_CGROUP_BYTES];
+    char container_id[MS_CONTAINER_ID_BYTES];
+    char container_runtime[MS_CONTAINER_RUNTIME_BYTES];
+    char tty[MS_TTY_BYTES];
+    bool ssh_origin;
+    uint64_t pid_namespace;
+    uint64_t mount_namespace;
     pid_t target_pid;
+    pid_t target_namespace_pid;
     char target_exe[MS_PATH_BYTES];
+    uint64_t bytes_written;
     char evidence[MS_EVIDENCE_BYTES];
     bool enrichment_incomplete;
     bool arguments_truncated;

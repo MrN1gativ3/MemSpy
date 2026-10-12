@@ -3,7 +3,7 @@
 
 #include <linux/types.h>
 
-#define MS_KERNEL_EVENT_ABI 1U
+#define MS_KERNEL_EVENT_ABI 2U
 #define MS_KERNEL_COMM_BYTES 16U
 
 enum ms_kernel_event_kind {
@@ -12,6 +12,7 @@ enum ms_kernel_event_kind {
     MS_KERNEL_PROCESS_VM_WRITE,
     MS_KERNEL_PTRACE_WRITE,
     MS_KERNEL_FORK,
+    MS_KERNEL_FILE_WRITE,
 };
 
 struct ms_kernel_event {

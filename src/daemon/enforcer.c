@@ -184,13 +184,26 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
         memcpy(alert->cmdline + used, quoted, length + 1U);
         used += length;
     }
+    struct ms_process_evidence evidence = {0};
     complete = read_username(alert->uid, alert->username, sizeof alert->username) &&
                read_link(alert->pid, alert->launcher_exe, sizeof alert->launcher_exe) &&
-               ms_process_evidence_read(alert->ppid, alert->parent_comm,
-                                        sizeof alert->parent_comm,
-                                        alert->parent_exe, sizeof alert->parent_exe,
-                                        alert->parent_sha256,
-                                        sizeof alert->parent_sha256);
+               ms_process_evidence_read(alert->pid, &evidence);
+    if (evidence.parent_pid > 0)
+        alert->ppid = evidence.parent_pid;
+    g_strlcpy(alert->parent_comm, evidence.parent_comm, sizeof alert->parent_comm);
+    g_strlcpy(alert->parent_exe, evidence.parent_exe, sizeof alert->parent_exe);
+    g_strlcpy(alert->parent_sha256, evidence.parent_sha256, sizeof alert->parent_sha256);
+    alert->grandparent_pid = evidence.grandparent_pid;
+    g_strlcpy(alert->grandparent_comm, evidence.grandparent_comm, sizeof alert->grandparent_comm);
+    g_strlcpy(alert->grandparent_exe, evidence.grandparent_exe, sizeof alert->grandparent_exe);
+    g_strlcpy(alert->systemd_unit, evidence.systemd_unit, sizeof alert->systemd_unit);
+    g_strlcpy(alert->cgroup_path, evidence.cgroup_path, sizeof alert->cgroup_path);
+    g_strlcpy(alert->container_id, evidence.container_id, sizeof alert->container_id);
+    g_strlcpy(alert->container_runtime, evidence.container_runtime, sizeof alert->container_runtime);
+    g_strlcpy(alert->tty, evidence.tty, sizeof alert->tty);
+    alert->ssh_origin = evidence.ssh_origin;
+    alert->pid_namespace = evidence.pid_namespace;
+    alert->mount_namespace = evidence.mount_namespace;
     alert->enrichment_incomplete |= !complete;
     clock_gettime(CLOCK_REALTIME, &now);
     alert->timestamp_utc = now.tv_sec;

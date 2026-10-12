@@ -1,1 +1,4 @@
-option('integration_tests', type: 'boolean', value: false, description: 'Run privileged eBPF integration tests')
+option('integration_tests', type: 'boolean', value: false,
+       description: 'Run privileged eBPF integration tests')
+option('desktop_ui', type: 'feature', value: 'auto',
+       description: 'Build and install the GTK dashboard and desktop integration')

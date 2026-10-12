@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <glib.h>
+#include <limits.h>
 #include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
@@ -177,23 +178,41 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
         return false;
     }
     if (event->pid == 0 || (event->kind != MS_KERNEL_EXEC &&
-        event->kind != MS_KERNEL_PROCESS_VM_WRITE && event->kind != MS_KERNEL_PTRACE_WRITE))
+        event->kind != MS_KERNEL_PROCESS_VM_WRITE && event->kind != MS_KERNEL_PTRACE_WRITE &&
+        event->kind != MS_KERNEL_FILE_WRITE))
         return false;
 
     *observation = (struct ms_observation){
         .kind = event->kind == MS_KERNEL_EXEC ? MS_OBSERVATION_EXEC :
                 event->kind == MS_KERNEL_PROCESS_VM_WRITE ? MS_OBSERVATION_PROCESS_VM_WRITE :
-                MS_OBSERVATION_PTRACE_WRITE,
+                event->kind == MS_KERNEL_PTRACE_WRITE ? MS_OBSERVATION_PTRACE_WRITE :
+                MS_OBSERVATION_PROC_MEM_WRITE,
         .process = {.pid = (pid_t)event->pid},
         .target = {.pid = (pid_t)event->target_pid},
         .observed_boottime_ns = event->observed_boottime_ns,
         .uid = (uid_t)event->uid,
         .syscall_result = (long)event->result,
+        .bytes_written = event->kind == MS_KERNEL_FILE_WRITE ? (uint64_t)event->result : 0,
     };
     memcpy(observation->comm, event->comm, sizeof event->comm);
     observation->comm[sizeof event->comm] = '\0';
     clock_gettime(CLOCK_REALTIME, &now);
     observation->timestamp_utc = now.tv_sec;
+
+    if (observation->kind == MS_OBSERVATION_PROC_MEM_WRITE) {
+        pid_t namespace_pid = 0;
+        pid_t host_pid = 0;
+        if (event->result <= 0 || event->aux > INT_MAX ||
+            !ms_proc_mem_target_read("/proc", observation->process.pid, (int)event->aux,
+                                     &namespace_pid, &host_pid, observation->target_exe,
+                                     sizeof observation->target_exe)) {
+            set_error(error, "incomplete_observation",
+                      "proc memory descriptor could not be confirmed");
+            return false;
+        }
+        observation->target_namespace_pid = namespace_pid;
+        observation->target.pid = host_pid;
+    }
 
     actor_complete = read_process_stat(observation->process.pid, &observation->ppid,
                                        &observation->process.start_boottime_ns) &&
@@ -219,16 +238,28 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
     if (((observation->kind == MS_OBSERVATION_EXEC) &&
          (observation->flags & (MS_OBSERVATION_MEMFD | MS_OBSERVATION_DELETED)) != 0) ||
         ((observation->kind == MS_OBSERVATION_PROCESS_VM_WRITE ||
-          observation->kind == MS_OBSERVATION_PTRACE_WRITE) &&
+          observation->kind == MS_OBSERVATION_PTRACE_WRITE ||
+          observation->kind == MS_OBSERVATION_PROC_MEM_WRITE) &&
          observation->syscall_result >= 0 && observation->target.pid > 0 &&
          observation->target.pid != observation->process.pid)) {
-        if (!ms_process_evidence_read(observation->ppid, observation->parent_comm,
-                                      sizeof observation->parent_comm,
-                                      observation->parent_exe,
-                                      sizeof observation->parent_exe,
-                                      observation->parent_sha256,
-                                      sizeof observation->parent_sha256))
+        struct ms_process_evidence evidence = {0};
+        if (!ms_process_evidence_read(observation->process.pid, &evidence))
             actor_complete = false;
+        observation->ppid = evidence.parent_pid > 0 ? evidence.parent_pid : observation->ppid;
+        g_strlcpy(observation->parent_comm, evidence.parent_comm, sizeof observation->parent_comm);
+        g_strlcpy(observation->parent_exe, evidence.parent_exe, sizeof observation->parent_exe);
+        g_strlcpy(observation->parent_sha256, evidence.parent_sha256, sizeof observation->parent_sha256);
+        observation->grandparent_pid = evidence.grandparent_pid;
+        g_strlcpy(observation->grandparent_comm, evidence.grandparent_comm, sizeof observation->grandparent_comm);
+        g_strlcpy(observation->grandparent_exe, evidence.grandparent_exe, sizeof observation->grandparent_exe);
+        g_strlcpy(observation->systemd_unit, evidence.systemd_unit, sizeof observation->systemd_unit);
+        g_strlcpy(observation->cgroup_path, evidence.cgroup_path, sizeof observation->cgroup_path);
+        g_strlcpy(observation->container_id, evidence.container_id, sizeof observation->container_id);
+        g_strlcpy(observation->container_runtime, evidence.container_runtime, sizeof observation->container_runtime);
+        g_strlcpy(observation->tty, evidence.tty, sizeof observation->tty);
+        observation->ssh_origin = evidence.ssh_origin;
+        observation->pid_namespace = evidence.pid_namespace;
+        observation->mount_namespace = evidence.mount_namespace;
     }
     observation->enrichment_incomplete = !actor_complete;
     return true;
@@ -249,7 +280,10 @@ on_sample(void *context, int cpu, void *data, __u32 size)
         return;
     if (size < sizeof(struct ms_kernel_event) ||
         !ms_sensor_observation_from_event(data, &observation, &error)) {
-        ++sensor->stats.invalid_events;
+        if (strcmp(error.code, "incomplete_observation") == 0)
+            ++sensor->stats.incomplete_observations;
+        else
+            ++sensor->stats.invalid_events;
         return;
     }
     ++sensor->stats.received_events;

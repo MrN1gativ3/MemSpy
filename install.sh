@@ -10,10 +10,10 @@ fail()
 usage()
 {
     cat <<'EOF'
-Usage: sudo ./install.sh [desktop-user] [gnome|kde]
+Usage: sudo ./install.sh [reader-user] [gnome|kde|headless]
 
 Build, test, install, and start MemSpy on Ubuntu, Debian, Fedora, and Arch Linux.
-The desktop user and GNOME/KDE session are detected automatically when possible.
+The desktop profile is detected automatically; servers without GNOME/KDE use headless.
 EOF
 }
 
@@ -25,7 +25,7 @@ case "${1:-}" in
 esac
 
 test "$(id -u)" -eq 0 || fail "run with sudo: sudo ./install.sh"
-test "$#" -le 2 || fail "usage: sudo ./install.sh [desktop-user] [gnome|kde]"
+test "$#" -le 2 || fail "usage: sudo ./install.sh [reader-user] [gnome|kde|headless]"
 test -r /etc/os-release || fail "cannot identify this operating system"
 . /etc/os-release
 case "${ID:-}" in
@@ -48,14 +48,16 @@ if [ "$kernel_major" -lt 5 ] || { [ "$kernel_major" -eq 5 ] && [ "$kernel_minor"
     fail "Linux 5.4 or newer is required"
 fi
 
+reader_supplied=false
+[ "$#" -ge 1 ] && [ "${1:-}" != headless ] && reader_supplied=true
 desktop_user=${1:-${SUDO_USER:-}}
-test -n "$desktop_user" || fail "run with sudo from the desktop account or pass its username"
-test "$desktop_user" != root || fail "the UI must run as an unprivileged desktop user"
-getent passwd "$desktop_user" >/dev/null || fail "user '$desktop_user' does not exist"
-
 desktop_environment=${2:-}
+if [ "$#" -eq 1 ] && [ "${1:-}" = headless ]; then
+    desktop_environment=headless
+    desktop_user=
+fi
 case "$desktop_environment" in
-    gnome|kde) ;;
+    gnome|kde|headless) ;;
     "")
         current_desktop=$(printf '%s' "${XDG_CURRENT_DESKTOP:-}" | tr '[:upper:]' '[:lower:]')
         case "$current_desktop" in
@@ -63,10 +65,10 @@ case "$desktop_environment" in
             *kde*|*plasma*) desktop_environment=kde ;;
         esac
         ;;
-    *) fail "desktop must be 'gnome' or 'kde'" ;;
+    *) fail "profile must be 'gnome', 'kde', or 'headless'" ;;
 esac
 
-if [ -z "$desktop_environment" ]; then
+if [ -z "$desktop_environment" ] && [ -n "$desktop_user" ]; then
     gnome_running=false
     kde_running=false
     pgrep -u "$desktop_user" -x gnome-shell >/dev/null 2>&1 && gnome_running=true
@@ -92,15 +94,28 @@ if [ -z "$desktop_environment" ]; then
     elif [ "$gnome_present" = true ] && [ "$kde_present" = true ]; then
         fail "both GNOME and KDE are installed; pass 'gnome' or 'kde' as the second argument"
     else
-        fail "neither GNOME nor KDE Plasma is installed; no changes were made"
+        desktop_environment=headless
     fi
 fi
 
 if [ "$desktop_environment" = gnome ]; then
     command -v gnome-shell >/dev/null 2>&1 || fail "GNOME is not installed; no changes were made"
-else
+elif [ "$desktop_environment" = kde ]; then
     command -v plasmashell >/dev/null 2>&1 || fail "KDE Plasma is not installed; no changes were made"
 fi
+
+if [ "$desktop_environment" != headless ]; then
+    test -n "$desktop_user" || fail "pass the unprivileged desktop username"
+fi
+if [ "$desktop_environment" = headless ] && [ "$reader_supplied" = false ]; then
+    desktop_user=
+fi
+if [ -n "$desktop_user" ]; then
+    test "$desktop_user" != root || fail "the reader must be an unprivileged user"
+    getent passwd "$desktop_user" >/dev/null || fail "user '$desktop_user' does not exist"
+fi
+
+echo "Selected installation profile: $desktop_environment"
 
 echo "Installing build dependencies for $distribution..."
 case "$distribution" in
@@ -109,8 +124,12 @@ case "$distribution" in
         apt-get update
         apt-get install -y --no-install-recommends \
             build-essential meson ninja-build clang pkg-config linux-tools-common linux-tools-generic \
-            libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libgtk-3-dev \
-            libayatana-appindicator3-dev libnotify-dev libpolkit-gobject-1-dev policykit-1
+            libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libsystemd-dev \
+            libpolkit-gobject-1-dev policykit-1
+        if [ "$desktop_environment" != headless ]; then
+            apt-get install -y --no-install-recommends libgtk-3-dev \
+                libayatana-appindicator3-dev libnotify-dev
+        fi
         if [ "$desktop_environment" = gnome ]; then
             apt-get install -y --no-install-recommends gnome-shell-extension-appindicator
         fi
@@ -130,23 +149,32 @@ case "$distribution" in
         apt-get update
         apt-get install -y --no-install-recommends \
             build-essential meson ninja-build clang pkg-config bpftool \
-            libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libgtk-3-dev \
-            libayatana-appindicator3-dev libnotify-dev libpolkit-gobject-1-dev policykit-1
+            libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libsystemd-dev \
+            libpolkit-gobject-1-dev policykit-1
+        if [ "$desktop_environment" != headless ]; then
+            apt-get install -y --no-install-recommends libgtk-3-dev \
+                libayatana-appindicator3-dev libnotify-dev
+        fi
         if [ "$desktop_environment" = gnome ]; then
             apt-get install -y --no-install-recommends gnome-shell-extension-appindicator
         fi
         ;;
     fedora)
         dnf install -y gcc meson ninja-build clang pkgconf-pkg-config bpftool \
-            libbpf-devel glib2-devel json-c-devel sqlite-devel gtk3-devel \
-            libayatana-appindicator-gtk3-devel libnotify-devel polkit-devel
+            libbpf-devel glib2-devel json-c-devel sqlite-devel systemd-devel polkit-devel
+        if [ "$desktop_environment" != headless ]; then
+            dnf install -y gtk3-devel libayatana-appindicator-gtk3-devel libnotify-devel
+        fi
         if [ "$desktop_environment" = gnome ]; then
             dnf install -y gnome-shell-extension-appindicator
         fi
         ;;
     arch)
         pacman -S --needed --noconfirm base-devel meson ninja clang pkgconf bpf \
-            libbpf glib2 json-c sqlite gtk3 libayatana-appindicator libnotify polkit
+            libbpf glib2 json-c sqlite systemd polkit
+        if [ "$desktop_environment" != headless ]; then
+            pacman -S --needed --noconfirm gtk3 libayatana-appindicator libnotify
+        fi
         if [ "$desktop_environment" = gnome ]; then
             pacman -S --needed --noconfirm gnome-shell-extension-appindicator
         fi
@@ -194,12 +222,17 @@ if [ -f /etc/memspy/response-allowlist.conf ]; then
     had_response_allowlist=true
 fi
 
+if [ "$desktop_environment" = headless ]; then
+    desktop_option=disabled
+else
+    desktop_option=enabled
+fi
 if [ -f "$build_dir/meson-private/coredata.dat" ]; then
     meson setup --reconfigure "$build_dir" --prefix=/usr --buildtype=release \
-        -Dintegration_tests=false
+        -Dintegration_tests=false -Ddesktop_ui="$desktop_option"
 else
     meson setup "$build_dir" --prefix=/usr --buildtype=release \
-        -Dintegration_tests=false
+        -Dintegration_tests=false -Ddesktop_ui="$desktop_option"
 fi
 meson compile -C "$build_dir"
 meson test -C "$build_dir" --no-suite privileged --print-errorlogs
@@ -214,7 +247,9 @@ else
 fi
 systemd-sysusers /usr/lib/sysusers.d/memspyd.conf
 systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf || true
-usermod -aG memspy-ui -- "$desktop_user"
+if [ -n "$desktop_user" ]; then
+    usermod -aG memspy-ui -- "$desktop_user"
+fi
 systemctl daemon-reload
 systemctl enable --now memspyd
 systemctl restart memspyd
@@ -249,5 +284,12 @@ systemctl daemon-reload
 
 echo
 echo "MemSpy is installed and running."
-echo "Desktop integration: $desktop_environment"
-echo "Log out and back in as $desktop_user, then run: memspy-ui"
+echo "Installation profile: $desktop_environment"
+if [ "$desktop_environment" = headless ]; then
+    echo "Run: memspyctl status"
+    if [ -n "$desktop_user" ]; then
+        echo "Log out and back in as $desktop_user before using memspyctl without sudo."
+    fi
+else
+    echo "Log out and back in as $desktop_user, then run: memspy-ui"
+fi

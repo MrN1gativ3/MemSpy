@@ -311,9 +311,19 @@ test_alert_outcomes_and_grouped_process_details(void)
     blocked.action = MS_ALERT_BLOCKED;
     blocked.ppid = 99;
     blocked.target_pid = 7331;
+    blocked.target_namespace_pid = 31;
+    blocked.bytes_written = 64;
+    blocked.grandparent_pid = 2;
+    blocked.ssh_origin = true;
+    blocked.pid_namespace = 101;
+    blocked.mount_namespace = 202;
     blocked.arguments_truncated = true;
     g_strlcpy(blocked.launcher_exe, "/usr/bin/loader", sizeof blocked.launcher_exe);
     g_strlcpy(blocked.target_exe, "/memfd:payload", sizeof blocked.target_exe);
+    g_strlcpy(blocked.grandparent_comm, "sshd", sizeof blocked.grandparent_comm);
+    g_strlcpy(blocked.grandparent_exe, "/usr/sbin/sshd", sizeof blocked.grandparent_exe);
+    g_strlcpy(blocked.systemd_unit, "fixture.service", sizeof blocked.systemd_unit);
+    g_strlcpy(blocked.cgroup_path, "/system.slice/fixture.service", sizeof blocked.cgroup_path);
 
     g_assert_true(ms_window_add_alert(window, &detected));
     g_assert_true(ms_window_add_alert(window, &blocked));
@@ -322,6 +332,7 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Process details"));
     g_assert_true(has_label_text(widget, "Identity"));
     g_assert_true(has_label_text(widget, "Execution"));
+    g_assert_true(has_label_text(widget, "Workload"));
     g_assert_true(has_label_text(widget, "Target"));
     g_assert_true(has_label_text(widget, "Detection"));
     g_assert_true(has_label_text(widget, "User"));
@@ -330,6 +341,11 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Parent PID"));
     g_assert_true(has_label_text(widget, "Parent executable"));
     g_assert_true(has_label_text(widget, "Parent SHA-256"));
+    g_assert_true(has_label_text(widget, "Grandparent process name"));
+    g_assert_true(has_label_text(widget, "SSH origin"));
+    g_assert_true(has_label_text(widget, "Systemd unit"));
+    g_assert_true(has_label_text(widget, "Cgroup"));
+    g_assert_true(has_label_text(widget, "Namespaces"));
     g_assert_true(has_label_text(widget,
         "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
     g_assert_true(has_label_text(widget, "Attempted executable"));
@@ -337,6 +353,8 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Launcher executable"));
     g_assert_true(has_label_text(widget, "Target PID"));
     g_assert_true(has_label_text(widget, "Target executable"));
+    g_assert_true(has_label_text(widget, "Target namespace PID"));
+    g_assert_true(has_label_text(widget, "Bytes written"));
     g_assert_true(has_label_text(widget, "Outcome"));
     g_assert_true(has_label_text(widget, "Rule"));
     g_assert_true(has_label_text(widget, "Detection signal"));

@@ -24,6 +24,14 @@ observation(enum ms_observation_kind kind, pid_t pid, uint64_t start_ns, uint64_
     g_strlcpy(value.parent_sha256,
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
               sizeof value.parent_sha256);
+    value.grandparent_pid = 2;
+    value.ssh_origin = true;
+    value.pid_namespace = 101;
+    value.mount_namespace = 202;
+    g_strlcpy(value.grandparent_comm, "sshd", sizeof value.grandparent_comm);
+    g_strlcpy(value.grandparent_exe, "/usr/sbin/sshd", sizeof value.grandparent_exe);
+    g_strlcpy(value.systemd_unit, "fixture.service", sizeof value.systemd_unit);
+    g_strlcpy(value.cgroup_path, "/system.slice/fixture.service", sizeof value.cgroup_path);
     return value;
 }
 
@@ -41,6 +49,10 @@ assert_rule(struct ms_observation value, const char *rule_id, enum ms_severity s
     g_assert_cmpstr(alert.parent_exe, ==, "/usr/bin/shell");
     g_assert_cmpstr(alert.parent_sha256, ==,
                     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    g_assert_cmpint(alert.grandparent_pid, ==, 2);
+    g_assert_cmpstr(alert.grandparent_comm, ==, "sshd");
+    g_assert_cmpstr(alert.systemd_unit, ==, "fixture.service");
+    g_assert_true(alert.ssh_origin);
     ms_policy_free(policy);
 }
 
@@ -62,6 +74,12 @@ test_policy_maps_direct_rules(void)
     value.kind = MS_OBSERVATION_PTRACE_WRITE;
     value.syscall_result = 0;
     assert_rule(value, "PTRACE_WRITE", MS_SEVERITY_MEDIUM);
+
+    value.kind = MS_OBSERVATION_PROC_MEM_WRITE;
+    value.syscall_result = 64;
+    value.bytes_written = 64;
+    value.target_namespace_pid = value.target.pid;
+    assert_rule(value, "PROC_MEM_WRITE", MS_SEVERITY_MEDIUM);
 }
 
 static void

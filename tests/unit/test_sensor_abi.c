@@ -2,7 +2,7 @@
 
 #include "memspy_shared.h"
 
-_Static_assert(MS_KERNEL_EVENT_ABI == 1, "kernel event ABI must start at version 1");
+_Static_assert(MS_KERNEL_EVENT_ABI == 2, "kernel event ABI version changed unexpectedly");
 _Static_assert(sizeof(struct ms_kernel_event) == 64, "kernel event ABI must remain 64 bytes");
 _Static_assert(sizeof(((struct ms_kernel_event *)0)->comm) == 16, "kernel comm bound changed");
 

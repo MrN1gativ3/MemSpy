@@ -1,0 +1,47 @@
+.TH MEMSPYCTL 1 "October 2026" "MemSpy 0.1.0" "User Commands"
+.SH NAME
+memspyctl \- inspect and administer the local MemSpy detector
+.SH SYNOPSIS
+.B memspyctl
+.RI [ --json ]
+.IR command
+.RI [ arguments ]
+.SH DESCRIPTION
+.B memspyctl
+is a non-interactive client for the local MemSpy Unix socket at
+.IR /run/memspy/memspy.sock .
+The caller must be a trusted member of the
+.B memspy-ui
+group. No network connection is created.
+.SH COMMANDS
+.TP
+.B status
+Show detector, storage, event-loss, and response health.
+.TP
+.B alerts [--limit 1..200] [--minimum medium|high]
+List newest alerts.
+.TP
+.B show ALERT_ID
+Show all evidence for one alert.
+.TP
+.B export ALERT_ID
+Write one canonical alert JSON document to standard output.
+.TP
+.B response on|off
+Request a PolicyKit-authorized response-mode change.
+.TP
+.B version
+Print the client version.
+.SH OUTPUT
+Human-readable output is the default. With
+.B --json
+before the command or after status, alerts, show, or response, standard output contains only one JSON document; diagnostics are written to standard error.
+.SH EXIT STATUS
+0 success; 2 invalid usage; 3 detector or API unavailable; 4 authorization failure; 5 alert not found.
+.SH SECURITY
+Alert data can contain command lines and process paths for all local users. Add only trusted administrators to
+.BR memspy-ui .
+PolicyKit handles administrator credentials; MemSpy never reads a password.
+.SH SEE ALSO
+.BR memspyd (8),
+.BR memspy-ui (1)

@@ -11,6 +11,7 @@ enum ms_observation_kind {
     MS_OBSERVATION_EXEC = 1,
     MS_OBSERVATION_PROCESS_VM_WRITE,
     MS_OBSERVATION_PTRACE_WRITE,
+    MS_OBSERVATION_PROC_MEM_WRITE,
 };
 
 enum ms_observation_flag {
@@ -40,7 +41,20 @@ struct ms_observation {
     char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
     char parent_sha256[MS_SHA256_BYTES];
+    pid_t grandparent_pid;
+    char grandparent_comm[MS_COMM_BYTES];
+    char grandparent_exe[MS_PATH_BYTES];
+    char systemd_unit[MS_UNIT_BYTES];
+    char cgroup_path[MS_CGROUP_BYTES];
+    char container_id[MS_CONTAINER_ID_BYTES];
+    char container_runtime[MS_CONTAINER_RUNTIME_BYTES];
+    char tty[MS_TTY_BYTES];
+    bool ssh_origin;
+    uint64_t pid_namespace;
+    uint64_t mount_namespace;
+    pid_t target_namespace_pid;
     char target_exe[MS_PATH_BYTES];
+    uint64_t bytes_written;
     bool enrichment_incomplete;
     bool arguments_truncated;
 };

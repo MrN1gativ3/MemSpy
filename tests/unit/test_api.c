@@ -94,6 +94,8 @@ fixture_setup(struct api_fixture *fixture, gconstpointer user_data)
         .response_active = false,
         .blocked_execs = 3,
         .lost_block_events = 2,
+        .incomplete_observations = 5,
+        .journal_errors = 1,
     };
     struct ms_api_callbacks callbacks = {
         .peer_connected = peer_connected,
@@ -158,6 +160,7 @@ test_api_handshake_status_and_history(struct api_fixture *fixture, gconstpointer
     struct ms_alert medium = sample_alert(MS_SEVERITY_MEDIUM, "DELETED_EXEC");
     struct ms_alert high = sample_alert(MS_SEVERITY_HIGH, "MEMFD_EXEC");
     struct ms_alert_page page = {0};
+    struct ms_alert selected = {0};
 
     (void)user_data;
     g_assert_true(ms_store_insert(fixture->store, &medium, &error));
@@ -181,10 +184,16 @@ test_api_handshake_status_and_history(struct api_fixture *fixture, gconstpointer
     g_assert_false(health.response_active);
     g_assert_cmpuint(health.blocked_execs, ==, 3);
     g_assert_cmpuint(health.lost_block_events, ==, 2);
+    g_assert_cmpuint(health.incomplete_observations, ==, 5);
+    g_assert_cmpuint(health.journal_errors, ==, 1);
     g_assert_true(ms_client_list_alerts(client, 0, MS_SEVERITY_HIGH, 1000, &page, &error));
     g_assert_cmpuint(page.length, ==, 1);
     g_assert_cmpint(page.items[0].id, ==, high.id);
     ms_alert_page_clear(&page);
+    g_assert_true(ms_client_get_alert(client, high.id, &selected, &error));
+    g_assert_cmpstr(selected.rule_id, ==, "MEMFD_EXEC");
+    g_assert_false(ms_client_get_alert(client, high.id + 100, &selected, &error));
+    g_assert_cmpstr(error.code, ==, "alert_not_found");
     ms_client_close(client);
 }
 
@@ -204,7 +213,7 @@ test_api_response_control(struct api_fixture *fixture, gconstpointer user_data)
     (void)user_data;
 
     descriptor = raw_connect(fixture->api);
-    static const char before_hello[] = "{\"v\":2,\"op\":\"set_response\",\"enabled\":true}\n";
+    static const char before_hello[] = "{\"v\":3,\"op\":\"set_response\",\"enabled\":true}\n";
     g_assert_cmpint(write(descriptor, before_hello, sizeof before_hello - 1U), ==,
                     (ssize_t)(sizeof before_hello - 1U));
     g_assert_cmpint(read(descriptor, &(char){0}, 1), ==, 0);
@@ -219,8 +228,8 @@ test_api_response_control(struct api_fixture *fixture, gconstpointer user_data)
     close(descriptor);
 
     descriptor = raw_connect(fixture->api);
-    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
-    static const char invalid[] = "{\"v\":2,\"op\":\"set_response\",\"enabled\":1}\n";
+    static const char hello[] = "{\"v\":3,\"op\":\"hello\"}\n";
+    static const char invalid[] = "{\"v\":3,\"op\":\"set_response\",\"enabled\":1}\n";
     g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==,
                     (ssize_t)(sizeof hello - 1U));
     g_clear_pointer(&line, g_free);
@@ -324,7 +333,7 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
     close(descriptor);
 
     descriptor = raw_connect(fixture->api);
-    static const char status_before_hello[] = "{\"v\":2,\"op\":\"status\"}\n";
+    static const char status_before_hello[] = "{\"v\":3,\"op\":\"status\"}\n";
     g_assert_cmpint(write(descriptor, status_before_hello, sizeof status_before_hello - 1U), ==,
                     (ssize_t)(sizeof status_before_hello - 1U));
     g_clear_pointer(&line, g_free);
@@ -333,8 +342,8 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
     close(descriptor);
 
     descriptor = raw_connect(fixture->api);
-    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
-    static const char unknown[] = "{\"v\":2,\"op\":\"delete\"}\n";
+    static const char hello[] = "{\"v\":3,\"op\":\"hello\"}\n";
+    static const char unknown[] = "{\"v\":3,\"op\":\"delete\"}\n";
     g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==, (ssize_t)(sizeof hello - 1U));
     g_clear_pointer(&line, g_free);
     line = read_line(descriptor);
@@ -347,7 +356,7 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
 
     descriptor = raw_connect(fixture->api);
     static const char invalid_alerts[] =
-        "{\"v\":2,\"op\":\"alerts\",\"before_id\":-1,\"minimum\":0,\"limit\":\"many\"}\n";
+        "{\"v\":3,\"op\":\"alerts\",\"before_id\":-1,\"minimum\":0,\"limit\":\"many\"}\n";
     g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==, (ssize_t)(sizeof hello - 1U));
     g_clear_pointer(&line, g_free);
     line = read_line(descriptor);
@@ -415,8 +424,8 @@ test_api_reports_unavailable_history(void)
     struct ms_store *store = NULL;
     struct ms_error error = {0};
     g_autofree char *line = NULL;
-    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
-    static const char alerts[] = "{\"v\":2,\"op\":\"alerts\"}\n";
+    static const char hello[] = "{\"v\":3,\"op\":\"hello\"}\n";
+    static const char alerts[] = "{\"v\":3,\"op\":\"alerts\"}\n";
     int descriptor;
 
     g_assert_nonnull(api);
@@ -515,8 +524,8 @@ static void
 test_api_disconnects_stalled_subscriber_without_blocking(struct api_fixture *fixture,
                                                           gconstpointer user_data)
 {
-    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
-    static const char subscribe[] = "{\"v\":2,\"op\":\"subscribe\"}\n";
+    static const char hello[] = "{\"v\":3,\"op\":\"hello\"}\n";
+    static const char subscribe[] = "{\"v\":3,\"op\":\"subscribe\"}\n";
     struct ms_alert alert = sample_alert(MS_SEVERITY_HIGH, "MEMFD_EXEC");
     g_autofree char *line = NULL;
     int descriptor = raw_connect(fixture->api);

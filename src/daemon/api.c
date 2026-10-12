@@ -192,6 +192,10 @@ health_json(const struct ms_health *health)
     json_object_object_add(object, "response_active", json_object_new_boolean(health->response_active));
     json_object_object_add(object, "blocked_execs", json_object_new_uint64(health->blocked_execs));
     json_object_object_add(object, "lost_block_events", json_object_new_uint64(health->lost_block_events));
+    json_object_object_add(object, "incomplete_observations",
+                           json_object_new_uint64(health->incomplete_observations));
+    json_object_object_add(object, "journal_errors",
+                           json_object_new_uint64(health->journal_errors));
     json_object_object_add(object, "response_reason", json_object_new_string(health->response_reason));
     json_object_object_add(object, "message", json_object_new_string(health->message));
     return object;
@@ -317,6 +321,48 @@ handle_alerts(struct ms_session *session, json_object *request)
     ms_alert_page_clear(&page);
 }
 
+static void
+handle_alert(struct ms_session *session, json_object *request)
+{
+    json_object *field;
+    json_object *reply;
+    json_object *encoded;
+    struct ms_alert alert = {0};
+    struct ms_error error = {0};
+    struct ms_store *store;
+    int64_t id;
+
+    if (!json_object_object_get_ex(request, "id", &field) ||
+        json_object_get_type(field) != json_type_int ||
+        (id = json_object_get_int64(field)) <= 0) {
+        send_error(session->descriptor, "invalid_request");
+        return;
+    }
+    g_mutex_lock(&session->api->mutex);
+    store = session->api->store;
+    g_mutex_unlock(&session->api->mutex);
+    if (store == NULL) {
+        send_error(session->descriptor, "storage_unavailable");
+        return;
+    }
+    if (!ms_store_get(store, id, &alert, &error)) {
+        send_error(session->descriptor,
+                   strcmp(error.code, "store_not_found") == 0 ? "alert_not_found" : error.code);
+        return;
+    }
+    encoded = ms_alert_to_json(&alert);
+    if (encoded == NULL) {
+        send_error(session->descriptor, "store_data");
+        return;
+    }
+    reply = json_object_new_object();
+    json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
+    json_object_object_add(reply, "ok", json_object_new_boolean(true));
+    json_object_object_add(reply, "alert", encoded);
+    session_send_json(session, reply);
+    json_object_put(reply);
+}
+
 static gpointer
 client_worker(gpointer data)
 {
@@ -361,6 +407,8 @@ client_worker(gpointer data)
             handle_status(session);
         } else if (strcmp(operation, "alerts") == 0) {
             handle_alerts(session, request);
+        } else if (strcmp(operation, "alert") == 0) {
+            handle_alert(session, request);
         } else if (strcmp(operation, "set_response") == 0) {
             handle_set_response(session, request);
         } else if (strcmp(operation, "subscribe") == 0) {

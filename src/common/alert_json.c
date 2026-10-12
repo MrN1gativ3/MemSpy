@@ -99,6 +99,13 @@ ms_alert_to_json(const struct ms_alert *alert)
     json_object_object_add(object, "ppid", json_object_new_int64(alert->ppid));
     json_object_object_add(object, "uid", json_object_new_uint64(alert->uid));
     json_object_object_add(object, "target_pid", json_object_new_int64(alert->target_pid));
+    json_object_object_add(object, "grandparent_pid", json_object_new_int64(alert->grandparent_pid));
+    json_object_object_add(object, "ssh_origin", json_object_new_boolean(alert->ssh_origin));
+    json_object_object_add(object, "pid_namespace", json_object_new_uint64(alert->pid_namespace));
+    json_object_object_add(object, "mount_namespace", json_object_new_uint64(alert->mount_namespace));
+    json_object_object_add(object, "target_namespace_pid",
+                           json_object_new_int64(alert->target_namespace_pid));
+    json_object_object_add(object, "bytes_written", json_object_new_uint64(alert->bytes_written));
     json_object_object_add(object, "enrichment_incomplete", json_object_new_boolean(alert->enrichment_incomplete));
     json_object_object_add(object, "arguments_truncated", json_object_new_boolean(alert->arguments_truncated));
 
@@ -113,6 +120,16 @@ ms_alert_to_json(const struct ms_alert *alert)
         !add_string(object, "parent_exe", alert->parent_exe, sizeof alert->parent_exe) ||
         !add_string(object, "parent_sha256", alert->parent_sha256,
                     sizeof alert->parent_sha256) ||
+        !add_string(object, "grandparent_comm", alert->grandparent_comm,
+                    sizeof alert->grandparent_comm) ||
+        !add_string(object, "grandparent_exe", alert->grandparent_exe,
+                    sizeof alert->grandparent_exe) ||
+        !add_string(object, "systemd_unit", alert->systemd_unit, sizeof alert->systemd_unit) ||
+        !add_string(object, "cgroup_path", alert->cgroup_path, sizeof alert->cgroup_path) ||
+        !add_string(object, "container_id", alert->container_id, sizeof alert->container_id) ||
+        !add_string(object, "container_runtime", alert->container_runtime,
+                    sizeof alert->container_runtime) ||
+        !add_string(object, "tty", alert->tty, sizeof alert->tty) ||
         !add_string(object, "target_exe", alert->target_exe, sizeof alert->target_exe) ||
         !add_string(object, "evidence", alert->evidence, sizeof alert->evidence)) {
         json_object_put(object);
@@ -269,7 +286,32 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
         return false;
     }
     parsed.target_pid = (pid_t)number;
-    if (!copy_string(json, "target_exe", parsed.target_exe, sizeof parsed.target_exe, error) ||
+    if (!get_nonnegative_int(json, "grandparent_pid", INT_MAX, &number, error))
+        return false;
+    parsed.grandparent_pid = (pid_t)number;
+    if (!copy_string(json, "grandparent_comm", parsed.grandparent_comm,
+                     sizeof parsed.grandparent_comm, error) ||
+        !copy_string(json, "grandparent_exe", parsed.grandparent_exe,
+                     sizeof parsed.grandparent_exe, error) ||
+        !copy_string(json, "systemd_unit", parsed.systemd_unit,
+                     sizeof parsed.systemd_unit, error) ||
+        !copy_string(json, "cgroup_path", parsed.cgroup_path,
+                     sizeof parsed.cgroup_path, error) ||
+        !copy_string(json, "container_id", parsed.container_id,
+                     sizeof parsed.container_id, error) ||
+        !copy_string(json, "container_runtime", parsed.container_runtime,
+                     sizeof parsed.container_runtime, error) ||
+        !copy_string(json, "tty", parsed.tty, sizeof parsed.tty, error) ||
+        !get_required(json, "ssh_origin", json_type_boolean, &value, error))
+        return false;
+    parsed.ssh_origin = json_object_get_boolean(value);
+    if (!get_uint64(json, "pid_namespace", &parsed.pid_namespace, error) ||
+        !get_uint64(json, "mount_namespace", &parsed.mount_namespace, error) ||
+        !get_nonnegative_int(json, "target_namespace_pid", INT_MAX, &number, error))
+        return false;
+    parsed.target_namespace_pid = (pid_t)number;
+    if (!get_uint64(json, "bytes_written", &parsed.bytes_written, error) ||
+        !copy_string(json, "target_exe", parsed.target_exe, sizeof parsed.target_exe, error) ||
         !copy_string(json, "evidence", parsed.evidence, sizeof parsed.evidence, error) ||
         !get_required(json, "enrichment_incomplete", json_type_boolean, &value, error))
         return false;

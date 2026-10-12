@@ -21,6 +21,8 @@ struct fake_io {
     size_t rejected_launchers;
     uint64_t blocked_execs;
     uint64_t lost_block_events;
+    bool fail_journal;
+    size_t journaled;
     GArray *response_changes;
 };
 
@@ -62,6 +64,20 @@ fake_publish_health(void *userdata, const struct ms_health *health)
     struct fake_io *io = userdata;
     (void)health;
     ++io->health_updates;
+}
+
+static bool
+fake_journal_alert(void *userdata, const struct ms_alert *alert, struct ms_error *error)
+{
+    struct fake_io *io = userdata;
+    g_assert_cmpint(alert->id, >, 0);
+    g_string_append_c(io->order, 'J');
+    ++io->journaled;
+    if (!io->fail_journal)
+        return true;
+    g_strlcpy(error->code, "journal_error", sizeof error->code);
+    g_strlcpy(error->message, "fixture journal failure", sizeof error->message);
+    return false;
 }
 
 static bool
@@ -176,6 +192,7 @@ new_test_app(struct fake_io *io, const char *allowlist_path)
         .store_prune = fake_prune,
         .publish_alert = fake_publish_alert,
         .publish_health = fake_publish_health,
+        .journal_alert = fake_journal_alert,
         .userdata = io,
     };
     struct ms_error error = {0};
@@ -243,10 +260,10 @@ test_pipeline_store_then_publish_and_recovery(void)
     g_assert_true(g_file_set_contents(allowlist, "# empty\n", -1, NULL));
     app = new_test_app(&io, allowlist);
     ms_app_observe(app, &first);
-    g_assert_cmpstr(io.order->str, ==, "SP");
+    g_assert_cmpstr(io.order->str, ==, "SJP");
     io.fail_store = true;
     ms_app_observe(app, &second);
-    g_assert_cmpstr(io.order->str, ==, "SPSP");
+    g_assert_cmpstr(io.order->str, ==, "SJPSP");
     g_assert_cmpuint(io.published, ==, 2);
     g_assert_false(ms_app_health(app)->storage_available);
 
@@ -255,6 +272,33 @@ test_pipeline_store_then_publish_and_recovery(void)
     g_assert_cmpuint(io.stored, ==, 2);
     g_assert_true(ms_app_health(app)->storage_available);
     g_assert_cmpint(io.prune_cutoff, ==, 86400);
+    ms_app_free(app);
+    g_string_free(io.order, true);
+    g_unlink(allowlist);
+    g_rmdir(directory);
+}
+
+static void
+test_journal_failure_does_not_block_alerts(void)
+{
+    g_autofree char *directory = g_dir_make_tmp("memspy-journal-XXXXXX", NULL);
+    g_autofree char *allowlist = g_build_filename(directory, "allowlist.conf", NULL);
+    struct fake_io io = {.order = g_string_new(NULL), .fail_journal = true};
+    struct ms_app *app;
+    struct ms_observation first = memfd_observation(61);
+    struct ms_observation second = memfd_observation(62);
+
+    g_assert_true(g_file_set_contents(allowlist, "# empty\n", -1, NULL));
+    app = new_test_app(&io, allowlist);
+    g_test_expect_message(NULL, G_LOG_LEVEL_WARNING, "*structured journal output failed*");
+    ms_app_observe(app, &first);
+    g_test_assert_expected_messages();
+    ms_app_observe(app, &second);
+    g_assert_cmpuint(io.stored, ==, 2);
+    g_assert_cmpuint(io.published, ==, 2);
+    g_assert_cmpuint(io.journaled, ==, 2);
+    g_assert_cmpuint(ms_app_health(app)->journal_errors, ==, 2);
+    g_assert_cmpint(ms_app_health(app)->state, ==, MS_HEALTH_DEGRADED);
     ms_app_free(app);
     g_string_free(io.order, true);
     g_unlink(allowlist);
@@ -487,6 +531,7 @@ main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/daemon/health", test_health_reducer);
     g_test_add_func("/daemon/pipeline-recovery", test_pipeline_store_then_publish_and_recovery);
+    g_test_add_func("/daemon/journal-failure", test_journal_failure_does_not_block_alerts);
     g_test_add_func("/daemon/allowlist-incomplete", test_allowlist_and_incomplete_alert);
     g_test_add_func("/daemon/bounded-queue", test_storage_queue_is_bounded);
     g_test_add_func("/daemon/startup-with-corrupt-store", test_startup_continues_without_corrupt_store);

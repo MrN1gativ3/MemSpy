@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <sys/types.h>
 
-#define MS_PROTOCOL_VERSION 2
+#define MS_PROTOCOL_VERSION 3
 #define MS_MAX_MESSAGE_BYTES 65536U
 #define MS_MAX_CMDLINE_BYTES 4096U
 #define MS_CORRELATION_WINDOW_NS 30000000000ULL

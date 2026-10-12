@@ -116,6 +116,32 @@ int exit_ptrace(struct syscall_exit *context)
     return 0;
 }
 
+static __always_inline int remember_file_write(struct syscall_enter *context)
+{
+    return remember(MS_KERNEL_FILE_WRITE, 0, (__u64)(__u32)context->args[0]);
+}
+
+static __always_inline int finish_file_write(struct syscall_exit *context)
+{
+    __u64 key = bpf_get_current_pid_tgid();
+    struct pending_call *call = bpf_map_lookup_elem(&pending, &key);
+    if (call != NULL && call->kind == MS_KERNEL_FILE_WRITE && context->result > 0)
+        emit(context, call, context->result);
+    bpf_map_delete_elem(&pending, &key);
+    return 0;
+}
+
+#define MS_WRITE_TRACEPOINT(name) \
+SEC("tracepoint/syscalls/sys_enter_" #name) \
+int enter_##name(struct syscall_enter *context) { return remember_file_write(context); } \
+SEC("tracepoint/syscalls/sys_exit_" #name) \
+int exit_##name(struct syscall_exit *context) { return finish_file_write(context); }
+
+MS_WRITE_TRACEPOINT(write)
+MS_WRITE_TRACEPOINT(pwrite64)
+MS_WRITE_TRACEPOINT(writev)
+MS_WRITE_TRACEPOINT(pwritev2)
+
 SEC("tracepoint/sched/sched_process_exec")
 int process_exec(void *context)
 {

@@ -21,7 +21,8 @@ ms_health_apply(struct ms_health *health, enum ms_health_signal signal,
     case MS_HEALTH_PROBES_READY:
         if (health->state != MS_HEALTH_FAILED && health->storage_available &&
             health->lost_events == 0 && health->map_pressure == 0 &&
-            health->dropped_alerts == 0) {
+            health->dropped_alerts == 0 && health->incomplete_observations == 0 &&
+            health->journal_errors == 0) {
             health->state = MS_HEALTH_HEALTHY;
             health->protected = true;
             snprintf(health->message, sizeof health->message, "Monitoring active");
@@ -42,7 +43,8 @@ ms_health_apply(struct ms_health *health, enum ms_health_signal signal,
     case MS_HEALTH_STORE_RECOVERED:
         health->storage_available = true;
         if (health->state != MS_HEALTH_FAILED && health->lost_events == 0 &&
-            health->map_pressure == 0 && health->dropped_alerts == 0) {
+            health->map_pressure == 0 && health->dropped_alerts == 0 &&
+            health->incomplete_observations == 0 && health->journal_errors == 0) {
             health->state = MS_HEALTH_HEALTHY;
             health->protected = true;
             snprintf(health->message, sizeof health->message, "Monitoring active");
@@ -56,6 +58,14 @@ ms_health_apply(struct ms_health *health, enum ms_health_signal signal,
         health->state = MS_HEALTH_FAILED;
         health->protected = false;
         snprintf(health->message, sizeof health->message, "A required kernel probe failed");
+        break;
+    case MS_HEALTH_OBSERVATION_INCOMPLETE:
+        health->incomplete_observations += count;
+        degrade(health, "A short-lived process observation could not be confirmed");
+        break;
+    case MS_HEALTH_JOURNAL_FAILED:
+        health->journal_errors += count;
+        degrade(health, "Structured journal output failed; detection continues");
         break;
     }
 }

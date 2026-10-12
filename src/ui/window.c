@@ -199,7 +199,11 @@ create_alert_row(struct alert_view *view)
     char process_text[256];
     char user_text[MS_USERNAME_BYTES + 64U];
     char parent_pid[32];
+    char grandparent_pid[32];
     char target_pid[32];
+    char target_namespace_pid[32];
+    char namespace_text[96];
+    char bytes_written[32];
     char accessible_name[256];
 
     snprintf(process_text, sizeof process_text, "%s · PID %d", view->alert.comm, view->alert.pid);
@@ -243,6 +247,15 @@ create_alert_row(struct alert_view *view)
     }
     add_detail_field(details, "Parent executable", view->alert.parent_exe, true);
     add_detail_field(details, "Parent SHA-256", view->alert.parent_sha256, true);
+    add_detail_field(details, "Grandparent process name", view->alert.grandparent_comm, true);
+    if (view->alert.grandparent_pid > 0) {
+        snprintf(grandparent_pid, sizeof grandparent_pid, "%d", view->alert.grandparent_pid);
+        add_detail_field(details, "Grandparent PID", grandparent_pid, true);
+    }
+    add_detail_field(details, "Grandparent executable", view->alert.grandparent_exe, true);
+    add_detail_field(details, "TTY", view->alert.tty, true);
+    if (view->alert.ssh_origin)
+        add_detail_field(details, "SSH origin", "Yes", false);
 
     gtk_box_pack_start(GTK_BOX(details), new_detail_section("Execution"), false, false, 0);
     add_detail_field(details, blocked ? "Attempted executable" : "Executable",
@@ -251,13 +264,43 @@ create_alert_row(struct alert_view *view)
     if (blocked)
         add_detail_field(details, "Launcher executable", view->alert.launcher_exe, true);
 
-    if (view->alert.target_pid > 0 || view->alert.target_exe[0] != '\0') {
+    if (view->alert.systemd_unit[0] != '\0' || view->alert.cgroup_path[0] != '\0' ||
+        view->alert.container_id[0] != '\0' || view->alert.pid_namespace != 0 ||
+        view->alert.mount_namespace != 0) {
+        gtk_box_pack_start(GTK_BOX(details), new_detail_section("Workload"), false, false, 0);
+        add_detail_field(details, "Systemd unit", view->alert.systemd_unit, true);
+        if (view->alert.container_id[0] != '\0') {
+            char container[MS_CONTAINER_ID_BYTES + MS_CONTAINER_RUNTIME_BYTES + 8U];
+            snprintf(container, sizeof container, "%s%s%s", view->alert.container_id,
+                     view->alert.container_runtime[0] == '\0' ? "" : " · ",
+                     view->alert.container_runtime);
+            add_detail_field(details, "Container", container, true);
+        }
+        add_detail_field(details, "Cgroup", view->alert.cgroup_path, true);
+        snprintf(namespace_text, sizeof namespace_text, "PID %llu · mount %llu",
+                 (unsigned long long)view->alert.pid_namespace,
+                 (unsigned long long)view->alert.mount_namespace);
+        add_detail_field(details, "Namespaces", namespace_text, true);
+    }
+
+    if (view->alert.target_pid > 0 || view->alert.target_namespace_pid > 0 ||
+        view->alert.target_exe[0] != '\0' || view->alert.bytes_written > 0) {
         gtk_box_pack_start(GTK_BOX(details), new_detail_section("Target"), false, false, 0);
         if (view->alert.target_pid > 0) {
             snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
             add_detail_field(details, "Target PID", target_pid, true);
         }
+        if (view->alert.target_namespace_pid > 0) {
+            snprintf(target_namespace_pid, sizeof target_namespace_pid, "%d",
+                     view->alert.target_namespace_pid);
+            add_detail_field(details, "Target namespace PID", target_namespace_pid, true);
+        }
         add_detail_field(details, "Target executable", view->alert.target_exe, true);
+        if (view->alert.bytes_written > 0) {
+            snprintf(bytes_written, sizeof bytes_written, "%llu",
+                     (unsigned long long)view->alert.bytes_written);
+            add_detail_field(details, "Bytes written", bytes_written, true);
+        }
     }
 
     gtk_box_pack_start(GTK_BOX(details), new_detail_section("Detection"), false, false, 0);

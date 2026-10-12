@@ -15,6 +15,10 @@ printf '%s\n' "$help" | grep -q 'Ubuntu, Debian, Fedora, and Arch Linux'
 test "$("$legacy_installer" --help)" = "$help"
 grep -q 'libpolkit-gobject-1-dev' "$installer"
 grep -q 'polkit-devel' "$installer"
+grep -q 'libsystemd-dev' "$installer"
+grep -q 'systemd-devel' "$installer"
+grep -q 'desktop_ui=' "$installer"
+grep -q 'headless' "$installer"
 grep -q '"$build_dir/memspyd" --check-response' "$installer"
 grep -q 'response-allowlist.conf' "$installer"
 

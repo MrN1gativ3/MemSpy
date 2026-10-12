@@ -16,6 +16,12 @@ fixture_memfd_alert(void)
         .pid = 1200,
         .ppid = 1100,
         .uid = 1000,
+        .grandparent_pid = 1000,
+        .ssh_origin = true,
+        .pid_namespace = 4026531836ULL,
+        .mount_namespace = 4026531841ULL,
+        .target_namespace_pid = 77,
+        .bytes_written = 128,
         .target_pid = 0,
         .enrichment_incomplete = false,
         .arguments_truncated = true,
@@ -33,6 +39,13 @@ fixture_memfd_alert(void)
     g_strlcpy(alert.parent_sha256,
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
               sizeof alert.parent_sha256);
+    g_strlcpy(alert.grandparent_comm, "sshd", sizeof alert.grandparent_comm);
+    g_strlcpy(alert.grandparent_exe, "/usr/sbin/sshd", sizeof alert.grandparent_exe);
+    g_strlcpy(alert.systemd_unit, "ssh.service", sizeof alert.systemd_unit);
+    g_strlcpy(alert.cgroup_path, "/system.slice/ssh.service", sizeof alert.cgroup_path);
+    g_strlcpy(alert.container_id, "0123456789abcdef", sizeof alert.container_id);
+    g_strlcpy(alert.container_runtime, "docker", sizeof alert.container_runtime);
+    g_strlcpy(alert.tty, "pts/2", sizeof alert.tty);
     g_strlcpy(alert.evidence, "execveat fd=4", sizeof alert.evidence);
     return alert;
 }
@@ -59,7 +72,30 @@ test_alert_json_round_trip(void)
     g_assert_cmpstr(output.parent_sha256, ==,
                     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
     g_assert_true(output.arguments_truncated);
+    g_assert_cmpint(output.grandparent_pid, ==, 1000);
+    g_assert_cmpstr(output.grandparent_comm, ==, "sshd");
+    g_assert_cmpstr(output.systemd_unit, ==, "ssh.service");
+    g_assert_cmpstr(output.cgroup_path, ==, "/system.slice/ssh.service");
+    g_assert_cmpstr(output.container_runtime, ==, "docker");
+    g_assert_cmpstr(output.tty, ==, "pts/2");
+    g_assert_true(output.ssh_origin);
+    g_assert_cmpuint(output.pid_namespace, ==, 4026531836ULL);
+    g_assert_cmpint(output.target_namespace_pid, ==, 77);
+    g_assert_cmpuint(output.bytes_written, ==, 128);
     g_assert_cmpuint(strlen(output.cmdline), <=, MS_MAX_CMDLINE_BYTES);
+    json_object_put(json);
+}
+
+static void
+test_alert_json_rejects_overlong_server_context(void)
+{
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json = ms_alert_to_json(&input);
+    g_autofree char *cgroup = g_strnfill(MS_CGROUP_BYTES, 'x');
+
+    json_object_object_add(json, "cgroup_path", json_object_new_string(cgroup));
+    g_assert_false(ms_alert_from_json(json, &output, NULL));
     json_object_put(json);
 }
 
@@ -200,5 +236,7 @@ main(int argc, char **argv)
     g_test_add_func("/alert-json/embedded-nul", test_alert_json_rejects_embedded_nul);
     g_test_add_func("/alert-json/overlong-command", test_alert_json_rejects_overlong_command);
     g_test_add_func("/alert-json/negative-boottime", test_alert_json_rejects_negative_boottime);
+    g_test_add_func("/alert-json/server-context-bounds",
+                    test_alert_json_rejects_overlong_server_context);
     return g_test_run();
 }

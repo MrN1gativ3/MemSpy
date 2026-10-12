@@ -75,10 +75,11 @@ main(int argc, char **argv)
     }
     if (!harness.expect_none && !harness.found) {
         g_printerr("expected rule not observed: %s "
-                   "(received=%llu invalid=%llu lost=%llu child_status=%d)\n",
+                   "(received=%llu invalid=%llu incomplete=%llu lost=%llu child_status=%d)\n",
                    argv[2],
                    (unsigned long long)stats.received_events,
                    (unsigned long long)stats.invalid_events,
+                   (unsigned long long)stats.incomplete_observations,
                    (unsigned long long)stats.lost_events,
                    child_status);
         return 1;

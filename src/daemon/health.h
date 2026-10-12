@@ -11,6 +11,8 @@ enum ms_health_signal {
     MS_HEALTH_STORE_RECOVERED,
     MS_HEALTH_ALERT_DROPPED,
     MS_HEALTH_REQUIRED_PROBE_FAILED,
+    MS_HEALTH_OBSERVATION_INCOMPLETE,
+    MS_HEALTH_JOURNAL_FAILED,
 };
 
 void ms_health_apply(struct ms_health *health, enum ms_health_signal signal,

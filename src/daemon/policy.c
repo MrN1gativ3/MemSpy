@@ -35,6 +35,12 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
         .ppid = observation->ppid,
         .uid = observation->uid,
         .target_pid = observation->target.pid,
+        .grandparent_pid = observation->grandparent_pid,
+        .ssh_origin = observation->ssh_origin,
+        .pid_namespace = observation->pid_namespace,
+        .mount_namespace = observation->mount_namespace,
+        .target_namespace_pid = observation->target_namespace_pid,
+        .bytes_written = observation->bytes_written,
         .enrichment_incomplete = observation->enrichment_incomplete,
         .arguments_truncated = observation->arguments_truncated,
     };
@@ -46,6 +52,16 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
     copy_string(alert->parent_exe, sizeof alert->parent_exe, observation->parent_exe);
     copy_string(alert->parent_sha256, sizeof alert->parent_sha256,
                 observation->parent_sha256);
+    copy_string(alert->grandparent_comm, sizeof alert->grandparent_comm,
+                observation->grandparent_comm);
+    copy_string(alert->grandparent_exe, sizeof alert->grandparent_exe,
+                observation->grandparent_exe);
+    copy_string(alert->systemd_unit, sizeof alert->systemd_unit, observation->systemd_unit);
+    copy_string(alert->cgroup_path, sizeof alert->cgroup_path, observation->cgroup_path);
+    copy_string(alert->container_id, sizeof alert->container_id, observation->container_id);
+    copy_string(alert->container_runtime, sizeof alert->container_runtime,
+                observation->container_runtime);
+    copy_string(alert->tty, sizeof alert->tty, observation->tty);
     copy_string(alert->target_exe, sizeof alert->target_exe, observation->target_exe);
 }
 
@@ -151,7 +167,8 @@ ms_policy_ingest(struct ms_policy *policy, const struct ms_observation *observat
         return MS_POLICY_NONE;
 
     if (observation->kind == MS_OBSERVATION_PROCESS_VM_WRITE ||
-        observation->kind == MS_OBSERVATION_PTRACE_WRITE) {
+        observation->kind == MS_OBSERVATION_PTRACE_WRITE ||
+        observation->kind == MS_OBSERVATION_PROC_MEM_WRITE) {
         if (observation->syscall_result < 0 || observation->target.pid <= 0 ||
             observation->target.pid == observation->process.pid)
             return MS_POLICY_NONE;
@@ -160,9 +177,13 @@ ms_policy_ingest(struct ms_policy *policy, const struct ms_observation *observat
         if (observation->kind == MS_OBSERVATION_PROCESS_VM_WRITE)
             set_rule(alert, "PROCESS_VM_WRITE", MS_SEVERITY_MEDIUM,
                      "A process wrote into another process", "successful process_vm_writev");
-        else
+        else if (observation->kind == MS_OBSERVATION_PTRACE_WRITE)
             set_rule(alert, "PTRACE_WRITE", MS_SEVERITY_MEDIUM,
                      "A process used a modifying ptrace operation", "successful modifying ptrace");
+        else
+            set_rule(alert, "PROC_MEM_WRITE", MS_SEVERITY_MEDIUM,
+                     "A process wrote through another process's proc memory file",
+                     "successful write to canonical /proc/<pid>/mem descriptor");
         return MS_POLICY_ALERT;
     }
 

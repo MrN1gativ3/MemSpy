@@ -6,7 +6,7 @@ memspyd \- detect high-confidence fileless malware behavior with eBPF
 .RI [ options ]
 .SH DESCRIPTION
 .B memspyd
-loads observational eBPF probes, evaluates local detection rules, retains alerts for 30 days, and exposes a read-only Unix socket API. It does not block, kill, quarantine, inspect payload memory, or open a network listener.
+loads eBPF probes, evaluates local detection rules, retains alerts for 30 days, publishes structured journal records, and exposes a local Unix socket API. Optional response mode blocks only memfd-backed execution. It does not kill, quarantine, inspect payload memory, or open a network listener.
 .SH OPTIONS
 .TP
 .BI --config " PATH"
@@ -20,6 +20,9 @@ Use a Unix socket other than /run/memspy/memspy.sock.
 .TP
 .B --foreground
 Run in the foreground. This is the packaged default.
+.TP
+.B --check-response
+Check whether detection and BPF LSM response are available, then exit.
 .TP
 .B --version
 Print the version.
@@ -35,12 +38,17 @@ One exact rule ID and absolute executable path per line.
 Root-owned SQLite alert history, mode 0600.
 .TP
 .I /run/memspy/memspy.sock
-Local read-only API, mode 0660 and group memspy-ui.
+Local API, mode 0660 and group memspy-ui. Response changes require PolicyKit authorization.
+.SH ALERT OUTPUT
+Every stored alert is also submitted to journald with stable MEMSPY_RULE, MEMSPY_SEVERITY, MEMSPY_ACTION, MEMSPY_PID, MEMSPY_UID, MEMSPY_ALERT_ID, and MEMSPY_ALERT_JSON fields. Journal failure degrades health without blocking storage or API publication.
+.SH COVERAGE
+PROC_MEM_WRITE is emitted only after a successful write through a confirmed canonical /proc/<pid>/mem descriptor. Descriptor reuse or process exit before userspace confirmation produces an incomplete observation rather than a guessed alert. Process, parent, workload, container, terminal, SSH-origin, and namespace evidence is bounded and may be unavailable for short-lived processes.
 .SH STORAGE FAILURE
 If the SQLite database cannot open, the service preserves it, continues bounded live detection in degraded health, and retries storage every 60 seconds.
 .SH SECURITY
-The service requires x86_64 Linux 5.4 or newer and readable kernel BTF at /sys/kernel/btf/vmlinux. Add only trusted desktop users to memspy-ui. Membership permits reading alert metadata from all monitored users.
+The service requires x86_64 Linux 5.4 or newer and readable kernel BTF at /sys/kernel/btf/vmlinux. Add only trusted administrators to memspy-ui. Membership permits reading alert metadata from all monitored users. Canonical alert JSON in journald can include command lines and process paths, but never memory payloads or environment variables.
 .SH SEE ALSO
 .BR memspy-ui (1),
+.BR memspyctl (1),
 .BR systemctl (1),
 .BR journalctl (1)

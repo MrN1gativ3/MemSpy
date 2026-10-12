@@ -27,6 +27,8 @@ struct ms_app_dependencies {
                          struct ms_error *error);
     void (*publish_alert)(void *userdata, const struct ms_alert *alert);
     void (*publish_health)(void *userdata, const struct ms_health *health);
+    bool (*journal_alert)(void *userdata, const struct ms_alert *alert,
+                          struct ms_error *error);
     bool (*response_state_load)(void *userdata, const char *path, bool *enabled,
                                 struct ms_error *error);
     bool (*response_state_store)(void *userdata, const char *path, bool enabled,

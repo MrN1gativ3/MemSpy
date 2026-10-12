@@ -16,9 +16,12 @@ glib_dep = dependency('glib-2.0')
 sqlite_dep = dependency('sqlite3')
 gio_dep = dependency('gio-2.0')
 libbpf_dep = dependency('libbpf')
-gtk_dep = dependency('gtk+-3.0')
-appindicator_dep = dependency('ayatana-appindicator3-0.1')
-libnotify_dep = dependency('libnotify')
+desktop_ui = get_option('desktop_ui')
+gtk_dep = dependency('gtk+-3.0', required: desktop_ui)
+appindicator_dep = dependency('ayatana-appindicator3-0.1', required: desktop_ui)
+libnotify_dep = dependency('libnotify', required: desktop_ui)
+desktop_enabled = gtk_dep.found() and appindicator_dep.found() and libnotify_dep.found()
+systemd_dep = dependency('libsystemd')
 
 clang = find_program('clang')
 bpftool = find_program('bpftool')
@@ -84,6 +87,7 @@ daemon_sources = [
   'src/daemon/process_evidence.c',
   'src/daemon/response_config.c',
   'src/daemon/authorizer.c',
+  'src/daemon/journal.c',
   'src/common/alert_json.c',
 ]
 
@@ -93,24 +97,39 @@ memspyd = executable(
   bpf_skeleton,
   enforce_bpf_skeleton,
   include_directories: [inc, include_directories('src/daemon'), include_directories('src/bpf'), include_directories('.')],
-  dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep],
+  dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep, systemd_dep],
   c_args: ['-Wno-overlength-strings'],
   pie: true,
   install: true,
 )
 
+if desktop_enabled
 memspy_ui = executable(
   'memspy-ui',
   'src/ui/main.c',
   'src/ui/state.c',
-  'src/ui/client.c',
+  'src/common/client.c',
   'src/ui/window.c',
   'src/ui/indicator.c',
   'src/ui/notifications.c',
   'src/daemon/store.c',
   'src/common/alert_json.c',
-  include_directories: [inc, include_directories('src/ui'), include_directories('src/daemon')],
+  include_directories: [inc, include_directories('src/ui'), include_directories('src/common'), include_directories('src/daemon')],
   dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, gtk_dep, appindicator_dep, libnotify_dep],
+  pie: true,
+  install: true,
+)
+endif
+
+memspyctl = executable(
+  'memspyctl',
+  'src/cli/main.c',
+  'src/cli/output.c',
+  'src/common/client.c',
+  'src/common/alert_json.c',
+  'src/daemon/store.c',
+  include_directories: [inc, include_directories('src/cli'), include_directories('src/common'), include_directories('src/daemon')],
+  dependencies: [glib_dep, json_c_dep, sqlite_dep],
   pie: true,
   install: true,
 )
@@ -126,7 +145,6 @@ install_data('packaging/common/cleanup-bpf.sh',
              install_dir: get_option('libexecdir') / 'memspy',
              install_mode: 'rwxr-xr-x',
              rename: 'cleanup-bpf')
-install_data('data/memspy-ui.css', install_dir: get_option('datadir') / 'memspy')
 install_data('packaging/common/memspyd.service',
              install_dir: get_option('prefix') / 'lib/systemd/system')
 install_data('packaging/common/memspyd.tmpfiles',
@@ -137,18 +155,22 @@ install_data('packaging/common/memspyd.sysusers',
              rename: 'memspyd.conf')
 install_data('packaging/common/org.memspy.response.policy',
              install_dir: get_option('datadir') / 'polkit-1/actions')
-install_data('packaging/common/org.memspy.MemSpyUI.desktop',
-             install_dir: get_option('datadir') / 'applications')
-install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',
-             install_dir: get_option('sysconfdir') / 'xdg/autostart',
-             rename: 'org.memspy.MemSpyUI.desktop')
-install_data(
-  'data/icons/memspy-healthy-symbolic.svg',
-  'data/icons/memspy-medium-symbolic.svg',
-  'data/icons/memspy-high-symbolic.svg',
-  'data/icons/memspy-offline-symbolic.svg',
-  install_dir: get_option('datadir') / 'icons/hicolor/scalable/status',
-)
-install_man('docs/memspyd.8', 'docs/memspy-ui.1')
+install_man('docs/memspyd.8', 'docs/memspyctl.1')
+if desktop_enabled
+  install_data('data/memspy-ui.css', install_dir: get_option('datadir') / 'memspy')
+  install_data('packaging/common/org.memspy.MemSpyUI.desktop',
+               install_dir: get_option('datadir') / 'applications')
+  install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',
+               install_dir: get_option('sysconfdir') / 'xdg/autostart',
+               rename: 'org.memspy.MemSpyUI.desktop')
+  install_data(
+    'data/icons/memspy-healthy-symbolic.svg',
+    'data/icons/memspy-medium-symbolic.svg',
+    'data/icons/memspy-high-symbolic.svg',
+    'data/icons/memspy-offline-symbolic.svg',
+    install_dir: get_option('datadir') / 'icons/hicolor/scalable/status',
+  )
+  install_man('docs/memspy-ui.1')
+endif
 
 subdir('tests')

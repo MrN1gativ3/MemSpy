@@ -117,7 +117,7 @@ ms_client_connect_fd(int connected_fd, struct ms_client **out, struct ms_error *
         return false;
     }
     client->descriptor = connected_fd;
-    if (!write_line(client->descriptor, "{\"v\":2,\"op\":\"hello\"}")) {
+    if (!write_line(client->descriptor, "{\"v\":3,\"op\":\"hello\"}")) {
         set_error(error, "connect_failed", "%s", strerror(errno));
         ms_client_close(client);
         return false;
@@ -159,7 +159,7 @@ ms_client_get_status(struct ms_client *client, struct ms_health *health, struct 
 {
     json_object *reply;
     json_object *object;
-    if (!write_line(client->descriptor, "{\"v\":2,\"op\":\"status\"}"))
+    if (!write_line(client->descriptor, "{\"v\":3,\"op\":\"status\"}"))
         return false;
     reply = read_reply(client->descriptor, error);
     if (reply == NULL || !reply_ok(reply, error) ||
@@ -197,6 +197,8 @@ decode_health(json_object *object, struct ms_health *health)
     HEALTH_VALUE("dropped_alerts", dropped_alerts);
     HEALTH_VALUE("blocked_execs", blocked_execs);
     HEALTH_VALUE("lost_block_events", lost_block_events);
+    HEALTH_VALUE("incomplete_observations", incomplete_observations);
+    HEALTH_VALUE("journal_errors", journal_errors);
     if (!json_object_object_get_ex(object, "protected", &field) ||
         json_object_get_type(field) != json_type_boolean) return false;
     health->protected = json_object_get_boolean(field);
@@ -234,8 +236,8 @@ ms_client_set_response(struct ms_client *client, bool enabled,
                        struct ms_health *confirmed, struct ms_error *error)
 {
     const char *request = enabled ?
-        "{\"v\":2,\"op\":\"set_response\",\"enabled\":true}" :
-        "{\"v\":2,\"op\":\"set_response\",\"enabled\":false}";
+        "{\"v\":3,\"op\":\"set_response\",\"enabled\":true}" :
+        "{\"v\":3,\"op\":\"set_response\",\"enabled\":false}";
     json_object *reply;
     json_object *health;
 
@@ -312,7 +314,7 @@ ms_client_list_alerts(struct ms_client *client, int64_t before_id, enum ms_sever
     size_t length;
 
     snprintf(request, sizeof request,
-             "{\"v\":2,\"op\":\"alerts\",\"before_id\":%lld,\"minimum\":%d,\"limit\":%zu}",
+             "{\"v\":3,\"op\":\"alerts\",\"before_id\":%lld,\"minimum\":%d,\"limit\":%zu}",
              (long long)before_id, minimum, limit);
     if (!write_line(client->descriptor, request))
         return false;
@@ -352,6 +354,34 @@ ms_client_list_alerts(struct ms_client *client, int64_t before_id, enum ms_sever
 }
 
 bool
+ms_client_get_alert(struct ms_client *client, int64_t id,
+                    struct ms_alert *alert, struct ms_error *error)
+{
+    char request[128];
+    json_object *reply;
+    json_object *object;
+
+    if (client == NULL || alert == NULL || id <= 0) {
+        set_error(error, "invalid_request", "a positive alert id is required");
+        return false;
+    }
+    snprintf(request, sizeof request, "{\"v\":3,\"op\":\"alert\",\"id\":%lld}",
+             (long long)id);
+    if (!write_line(client->descriptor, request))
+        return false;
+    reply = read_reply(client->descriptor, error);
+    if (reply == NULL || !reply_ok(reply, error) ||
+        !json_object_object_get_ex(reply, "alert", &object) ||
+        !ms_alert_from_json(object, alert, error)) {
+        if (reply != NULL)
+            json_object_put(reply);
+        return false;
+    }
+    json_object_put(reply);
+    return true;
+}
+
+bool
 ms_client_subscribe(struct ms_client *client,
                     void (*on_alert)(const struct ms_alert *, void *),
                     void (*on_health)(const struct ms_health *, void *),
@@ -359,7 +389,7 @@ ms_client_subscribe(struct ms_client *client,
 {
     json_object *reply;
     if (client == NULL || client->subscription_thread != NULL ||
-        !write_line(client->descriptor, "{\"v\":2,\"op\":\"subscribe\"}"))
+        !write_line(client->descriptor, "{\"v\":3,\"op\":\"subscribe\"}"))
         return false;
     reply = read_reply(client->descriptor, error);
     if (reply == NULL || !reply_ok(reply, error)) {
