@@ -499,6 +499,19 @@ test_authorizer_rejects_changed_process_start(void)
 }
 
 static void
+test_authorizer_parses_policykit_struct_reply(void)
+{
+    GVariantBuilder details;
+    g_autoptr(GVariant) reply = NULL;
+    struct ms_error error = {0};
+
+    g_variant_builder_init(&details, G_VARIANT_TYPE("a{ss}"));
+    reply = g_variant_ref_sink(g_variant_new("((bba{ss}))", true, false, &details));
+    g_assert_true(ms_authorizer_parse_reply(reply, &error));
+    g_assert_cmpstr(error.code, ==, "");
+}
+
+static void
 test_api_disconnects_stalled_subscriber_without_blocking(struct api_fixture *fixture,
                                                           gconstpointer user_data)
 {
@@ -611,5 +624,7 @@ main(int argc, char **argv)
     g_test_add_func("/api/bounded-clients", test_api_bounds_connected_clients);
     g_test_add_func("/api/stalled-handshake", test_api_disconnects_stalled_handshake);
     g_test_add_func("/api/stale-peer", test_authorizer_rejects_changed_process_start);
+    g_test_add_func("/api/policykit-struct-reply",
+                    test_authorizer_parses_policykit_struct_reply);
     return g_test_run();
 }

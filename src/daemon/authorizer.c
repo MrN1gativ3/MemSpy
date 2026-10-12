@@ -93,18 +93,45 @@ map_bus_error(const GError *bus_error, struct ms_error *error)
 }
 
 bool
+ms_authorizer_parse_reply(GVariant *reply, struct ms_error *error)
+{
+    g_autoptr(GVariant) result_details = NULL;
+    gboolean authorized;
+    gboolean challenge;
+    const char *dismissed = NULL;
+
+    if (reply == NULL ||
+        !g_variant_is_of_type(reply, G_VARIANT_TYPE("((bba{ss}))"))) {
+        set_error(error, "authorization_unavailable",
+                  "PolicyKit returned an invalid authorization response");
+        return false;
+    }
+    g_variant_get(reply, "((bb@a{ss}))", &authorized, &challenge, &result_details);
+    if (g_variant_lookup(result_details, "polkit.dismissed", "&s", &dismissed) &&
+        g_strcmp0(dismissed, "true") == 0) {
+        set_error(error, "authorization_cancelled", "administrator authorization was cancelled");
+        return false;
+    }
+    if (!authorized) {
+        set_error(error, "authorization_denied",
+                  challenge ? "administrator authorization was not completed" :
+                              "administrator authorization was denied");
+        return false;
+    }
+    if (error != NULL)
+        *error = (struct ms_error){0};
+    return true;
+}
+
+bool
 ms_authorizer_check(struct ms_authorizer *authorizer,
                     const struct ms_peer_identity *peer, struct ms_error *error)
 {
     GVariantBuilder subject_details;
     GVariantBuilder request_details;
     g_autoptr(GVariant) reply = NULL;
-    g_autoptr(GVariant) result_details = NULL;
     g_autoptr(GError) bus_error = NULL;
     uint64_t current_start;
-    gboolean authorized;
-    gboolean challenge;
-    const char *dismissed = NULL;
 
     if (authorizer == NULL || peer == NULL) {
         set_error(error, "authorization_unavailable", "PolicyKit system service is unavailable");
@@ -132,7 +159,7 @@ ms_authorizer_check(struct ms_authorizer *authorizer,
         "CheckAuthorization",
         g_variant_new("((sa{sv})sa{ss}us)", "unix-process", &subject_details,
                       MS_POLKIT_ACTION, &request_details, 1U, ""),
-        G_VARIANT_TYPE("(bba{ss})"),
+        G_VARIANT_TYPE("((bba{ss}))"),
         G_DBUS_CALL_FLAGS_NONE,
         MS_POLKIT_TIMEOUT_MS,
         NULL,
@@ -141,21 +168,7 @@ ms_authorizer_check(struct ms_authorizer *authorizer,
         map_bus_error(bus_error, error);
         return false;
     }
-    g_variant_get(reply, "(bb@a{ss})", &authorized, &challenge, &result_details);
-    if (g_variant_lookup(result_details, "polkit.dismissed", "&s", &dismissed) &&
-        g_strcmp0(dismissed, "true") == 0) {
-        set_error(error, "authorization_cancelled", "administrator authorization was cancelled");
-        return false;
-    }
-    if (!authorized) {
-        set_error(error, "authorization_denied",
-                  challenge ? "administrator authorization was not completed" :
-                              "administrator authorization was denied");
-        return false;
-    }
-    if (error != NULL)
-        *error = (struct ms_error){0};
-    return true;
+    return ms_authorizer_parse_reply(reply, error);
 }
 
 void
