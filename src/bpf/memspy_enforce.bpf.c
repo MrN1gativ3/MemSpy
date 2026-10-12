@@ -238,7 +238,7 @@ int BPF_PROG(block_memfd_exec, struct linux_binprm *bprm, int prior_result)
         if (length >= sizeof(event->filename))
             event->flags |= MS_ENFORCE_FILENAME_TRUNCATED;
     }
-    if (bpf_perf_event_output((void *)bprm, &enforce_events, BPF_F_CURRENT_CPU,
+    if (bpf_perf_event_output(ctx, &enforce_events, BPF_F_CURRENT_CPU,
                               event, sizeof(*event)) != 0 && counters != NULL)
         ++counters->event_errors;
     bpf_map_delete_elem(&pending_exec, &process);

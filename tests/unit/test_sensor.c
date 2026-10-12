@@ -88,7 +88,34 @@ test_sensor_converts_and_enriches_exec(void)
     g_assert_true(g_path_is_absolute(observation.exe));
     g_assert_nonnull(strstr(observation.cmdline, "test-sensor"));
     g_assert_cmpstr(observation.username, !=, "");
+    g_assert_cmpstr(observation.parent_exe, ==, "");
+    g_assert_cmpstr(observation.parent_comm, ==, "");
+    g_assert_cmpstr(observation.parent_sha256, ==, "");
+    g_assert_false(observation.enrichment_incomplete);
+}
+
+static void
+test_sensor_enriches_parent_for_alert_candidate(void)
+{
+    struct ms_kernel_event event = {
+        .abi_version = MS_KERNEL_EVENT_ABI,
+        .kind = MS_KERNEL_PROCESS_VM_WRITE,
+        .pid = (uint32_t)getpid(),
+        .target_pid = (uint32_t)getppid(),
+        .uid = (uint32_t)getuid(),
+        .result = 1,
+        .observed_boottime_ns = 1234,
+    };
+    struct ms_observation observation = {0};
+
+    memcpy(event.comm, "test-sensor", strlen("test-sensor"));
+    g_assert_true(ms_sensor_observation_from_event(&event, &observation, NULL));
     g_assert_true(g_path_is_absolute(observation.parent_exe));
+    g_assert_cmpstr(observation.parent_comm, !=, "");
+    g_assert_cmpuint(strlen(observation.parent_sha256), ==, 64U);
+    for (size_t index = 0; index < 64U; ++index)
+        g_assert_true(g_ascii_isxdigit(observation.parent_sha256[index]) &&
+                      !g_ascii_isupper(observation.parent_sha256[index]));
     g_assert_false(observation.enrichment_incomplete);
 }
 
@@ -108,6 +135,8 @@ main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/sensor/enrich-exec", test_sensor_converts_and_enriches_exec);
+    g_test_add_func("/sensor/enrich-alert-parent",
+                    test_sensor_enriches_parent_for_alert_candidate);
     g_test_add_func("/sensor/reject-abi", test_sensor_rejects_wrong_abi);
     g_test_add_func("/sensor/format-argument-boundaries", test_sensor_formats_argument_boundaries);
     g_test_add_func("/sensor/format-invalid-utf8", test_sensor_repairs_invalid_utf8_arguments);

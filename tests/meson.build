@@ -85,6 +85,7 @@ enforcer_test = executable(
   'test-enforcer',
   'unit/test_enforcer.c',
   '../src/daemon/enforcer.c',
+  '../src/daemon/process_evidence.c',
   enforce_bpf_skeleton,
   include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],
   dependencies: [glib_dep, libbpf_dep],
@@ -97,6 +98,7 @@ sensor_test = executable(
   'test-sensor',
   'unit/test_sensor.c',
   '../src/daemon/sensor.c',
+  '../src/daemon/process_evidence.c',
   bpf_skeleton,
   include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],
   dependencies: [glib_dep, libbpf_dep],
@@ -116,6 +118,7 @@ daemon_test = executable(
   '../src/daemon/api.c',
   '../src/daemon/sensor.c',
   '../src/daemon/enforcer.c',
+  '../src/daemon/process_evidence.c',
   '../src/daemon/response_config.c',
   '../src/daemon/authorizer.c',
   '../src/common/alert_json.c',
@@ -147,7 +150,8 @@ test('ci-dependencies', find_program('sh'),
 test('build-portability', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_build_portability.sh',
             meson.project_source_root() / 'meson.build',
-            meson.project_source_root() / 'src/daemon/store.c'])
+            meson.project_source_root() / 'src/daemon/store.c',
+            meson.project_source_root() / 'src/bpf/memspy_enforce.bpf.c'])
 
 ui_state_test = executable(
   'test-ui-state',
@@ -179,6 +183,7 @@ sensor_harness = executable(
   'sensor-harness',
   'integration/sensor_harness.c',
   '../src/daemon/sensor.c',
+  '../src/daemon/process_evidence.c',
   '../src/daemon/policy.c',
   bpf_skeleton,
   include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],

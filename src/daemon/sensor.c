@@ -14,6 +14,7 @@
 #include <unistd.h>
 
 #include "memspy.skel.h"
+#include "process_evidence.h"
 
 #define MS_CAPTURED_ARGUMENTS 16U
 #define MS_CAPTURED_ARGUMENT_BYTES 2048U
@@ -202,9 +203,7 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
                                        sizeof observation->cmdline,
                                        &observation->arguments_truncated) &&
                      read_username(observation->uid, observation->username,
-                                   sizeof observation->username) &&
-                     read_executable(observation->ppid, observation->parent_exe,
-                                     sizeof observation->parent_exe);
+                                   sizeof observation->username);
     if (strstr(observation->exe, "memfd:") != NULL)
         observation->flags |= MS_OBSERVATION_MEMFD;
     if (g_str_has_suffix(observation->exe, " (deleted)"))
@@ -215,6 +214,20 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
                                &observation->target.start_boottime_ns) ||
             !read_executable(observation->target.pid, observation->target_exe,
                              sizeof observation->target_exe))
+            actor_complete = false;
+    }
+    if (((observation->kind == MS_OBSERVATION_EXEC) &&
+         (observation->flags & (MS_OBSERVATION_MEMFD | MS_OBSERVATION_DELETED)) != 0) ||
+        ((observation->kind == MS_OBSERVATION_PROCESS_VM_WRITE ||
+          observation->kind == MS_OBSERVATION_PTRACE_WRITE) &&
+         observation->syscall_result >= 0 && observation->target.pid > 0 &&
+         observation->target.pid != observation->process.pid)) {
+        if (!ms_process_evidence_read(observation->ppid, observation->parent_comm,
+                                      sizeof observation->parent_comm,
+                                      observation->parent_exe,
+                                      sizeof observation->parent_exe,
+                                      observation->parent_sha256,
+                                      sizeof observation->parent_sha256))
             actor_complete = false;
     }
     observation->enrichment_incomplete = !actor_complete;

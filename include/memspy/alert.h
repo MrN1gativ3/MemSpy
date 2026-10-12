@@ -14,6 +14,7 @@
 #define MS_COMM_BYTES 64U
 #define MS_USERNAME_BYTES 256U
 #define MS_PATH_BYTES 4096U
+#define MS_SHA256_BYTES 65U
 #define MS_EVIDENCE_BYTES 1024U
 
 enum ms_severity {
@@ -42,7 +43,9 @@ struct ms_alert {
     char exe[MS_PATH_BYTES];
     char cmdline[MS_MAX_CMDLINE_BYTES + 1U];
     char launcher_exe[MS_PATH_BYTES];
+    char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
+    char parent_sha256[MS_SHA256_BYTES];
     pid_t target_pid;
     char target_exe[MS_PATH_BYTES];
     char evidence[MS_EVIDENCE_BYTES];

@@ -19,6 +19,11 @@ observation(enum ms_observation_kind kind, pid_t pid, uint64_t start_ns, uint64_
     g_strlcpy(value.comm, "fixture", sizeof value.comm);
     g_strlcpy(value.exe, "/usr/bin/fixture", sizeof value.exe);
     g_strlcpy(value.cmdline, "fixture --test", sizeof value.cmdline);
+    g_strlcpy(value.parent_comm, "shell", sizeof value.parent_comm);
+    g_strlcpy(value.parent_exe, "/usr/bin/shell", sizeof value.parent_exe);
+    g_strlcpy(value.parent_sha256,
+              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof value.parent_sha256);
     return value;
 }
 
@@ -32,6 +37,10 @@ assert_rule(struct ms_observation value, const char *rule_id, enum ms_severity s
     g_assert_cmpint(ms_policy_ingest(policy, &value, &alert), ==, MS_POLICY_ALERT);
     g_assert_cmpstr(alert.rule_id, ==, rule_id);
     g_assert_cmpint(alert.severity, ==, severity);
+    g_assert_cmpstr(alert.parent_comm, ==, "shell");
+    g_assert_cmpstr(alert.parent_exe, ==, "/usr/bin/shell");
+    g_assert_cmpstr(alert.parent_sha256, ==,
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
     ms_policy_free(policy);
 }
 

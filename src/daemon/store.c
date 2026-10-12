@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MS_STORE_SCHEMA_VERSION 2
+#define MS_STORE_SCHEMA_VERSION 3
 #define MS_STORE_MAX_PAGE 200U
 #define MS_STORE_MAX_PRUNE_BATCH 100U
 
@@ -85,11 +85,13 @@ migrate(sqlite3 *database, struct ms_error *error)
         "action INTEGER NOT NULL DEFAULT 0 CHECK(action IN (0,1)),"
         "username TEXT NOT NULL DEFAULT '', launcher_exe TEXT NOT NULL DEFAULT '',"
         "parent_exe TEXT NOT NULL DEFAULT '',"
-        "arguments_truncated INTEGER NOT NULL DEFAULT 0 CHECK(arguments_truncated IN (0,1))"
+        "arguments_truncated INTEGER NOT NULL DEFAULT 0 CHECK(arguments_truncated IN (0,1)),"
+        "parent_comm TEXT NOT NULL DEFAULT '',"
+        "parent_sha256 TEXT NOT NULL DEFAULT ''"
         ");"
         "CREATE INDEX alerts_timestamp_idx ON alerts(timestamp_utc);"
         "CREATE INDEX alerts_severity_id_idx ON alerts(severity,id);"
-        "PRAGMA user_version=2;"
+        "PRAGMA user_version=3;"
         "COMMIT;";
     static const char migrate_v1[] =
         "BEGIN IMMEDIATE;"
@@ -98,7 +100,15 @@ migrate(sqlite3 *database, struct ms_error *error)
         "ALTER TABLE alerts ADD COLUMN launcher_exe TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE alerts ADD COLUMN parent_exe TEXT NOT NULL DEFAULT '';"
         "ALTER TABLE alerts ADD COLUMN arguments_truncated INTEGER NOT NULL DEFAULT 0 CHECK(arguments_truncated IN (0,1));"
-        "PRAGMA user_version=2;"
+        "ALTER TABLE alerts ADD COLUMN parent_comm TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN parent_sha256 TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version=3;"
+        "COMMIT;";
+    static const char migrate_v2[] =
+        "BEGIN IMMEDIATE;"
+        "ALTER TABLE alerts ADD COLUMN parent_comm TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN parent_sha256 TEXT NOT NULL DEFAULT '';"
+        "PRAGMA user_version=3;"
         "COMMIT;";
     int version;
 
@@ -108,6 +118,13 @@ migrate(sqlite3 *database, struct ms_error *error)
         return true;
     if (version == 1) {
         if (!execute(database, migrate_v1, error)) {
+            sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
+            return false;
+        }
+        return true;
+    }
+    if (version == 2) {
+        if (!execute(database, migrate_v2, error)) {
             sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
             return false;
         }
@@ -207,15 +224,17 @@ bind_alert(sqlite3_stmt *statement, const struct ms_alert *alert)
            sqlite3_bind_text(statement, index++, alert->username, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
            sqlite3_bind_text(statement, index++, alert->launcher_exe, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
            sqlite3_bind_text(statement, index++, alert->parent_exe, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-           sqlite3_bind_int(statement, index, alert->arguments_truncated) == SQLITE_OK;
+           sqlite3_bind_int(statement, index++, alert->arguments_truncated) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->parent_comm, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index, alert->parent_sha256, -1, SQLITE_TRANSIENT) == SQLITE_OK;
 }
 
 bool
 ms_store_insert(struct ms_store *store, struct ms_alert *alert, struct ms_error *error)
 {
     static const char sql[] =
-        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     sqlite3_stmt *statement = NULL;
     int result;
 
@@ -285,7 +304,9 @@ read_alert(sqlite3_stmt *statement, struct ms_alert *alert, struct ms_error *err
            copy_column(statement, 14, alert->evidence, sizeof alert->evidence, error) &&
            copy_column(statement, 17, alert->username, sizeof alert->username, error) &&
            copy_column(statement, 18, alert->launcher_exe, sizeof alert->launcher_exe, error) &&
-           copy_column(statement, 19, alert->parent_exe, sizeof alert->parent_exe, error);
+           copy_column(statement, 19, alert->parent_exe, sizeof alert->parent_exe, error) &&
+           copy_column(statement, 21, alert->parent_comm, sizeof alert->parent_comm, error) &&
+           copy_column(statement, 22, alert->parent_sha256, sizeof alert->parent_sha256, error);
 }
 
 void
@@ -302,7 +323,7 @@ ms_store_list(struct ms_store *store, int64_t before_id, enum ms_severity minimu
               size_t limit, struct ms_alert_page *page, struct ms_error *error)
 {
     static const char sql[] =
-        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated "
+        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256 "
         "FROM alerts WHERE (?=0 OR id<?) AND severity>=? ORDER BY id DESC LIMIT ?";
     sqlite3_stmt *statement = NULL;
     struct ms_alert_page result = {0};

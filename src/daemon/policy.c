@@ -42,7 +42,10 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
     copy_string(alert->username, sizeof alert->username, observation->username);
     copy_string(alert->exe, sizeof alert->exe, observation->exe);
     copy_string(alert->cmdline, sizeof alert->cmdline, observation->cmdline);
+    copy_string(alert->parent_comm, sizeof alert->parent_comm, observation->parent_comm);
     copy_string(alert->parent_exe, sizeof alert->parent_exe, observation->parent_exe);
+    copy_string(alert->parent_sha256, sizeof alert->parent_sha256,
+                observation->parent_sha256);
     copy_string(alert->target_exe, sizeof alert->target_exe, observation->target_exe);
 }
 

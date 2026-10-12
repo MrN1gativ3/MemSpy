@@ -29,6 +29,10 @@ fixture_memfd_alert(void)
     g_strlcpy(alert.cmdline, "payload --run", sizeof alert.cmdline);
     g_strlcpy(alert.launcher_exe, "/usr/bin/launcher", sizeof alert.launcher_exe);
     g_strlcpy(alert.parent_exe, "/usr/bin/parent", sizeof alert.parent_exe);
+    g_strlcpy(alert.parent_comm, "parent", sizeof alert.parent_comm);
+    g_strlcpy(alert.parent_sha256,
+              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof alert.parent_sha256);
     g_strlcpy(alert.evidence, "execveat fd=4", sizeof alert.evidence);
     return alert;
 }
@@ -51,8 +55,38 @@ test_alert_json_round_trip(void)
     g_assert_cmpstr(output.username, ==, "alice");
     g_assert_cmpstr(output.launcher_exe, ==, "/usr/bin/launcher");
     g_assert_cmpstr(output.parent_exe, ==, "/usr/bin/parent");
+    g_assert_cmpstr(output.parent_comm, ==, "parent");
+    g_assert_cmpstr(output.parent_sha256, ==,
+                    "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
     g_assert_true(output.arguments_truncated);
     g_assert_cmpuint(strlen(output.cmdline), <=, MS_MAX_CMDLINE_BYTES);
+    json_object_put(json);
+}
+
+static void
+test_alert_json_rejects_invalid_parent_hash(void)
+{
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json = ms_alert_to_json(&input);
+
+    json_object_object_add(json, "parent_sha256", json_object_new_string("not-a-sha256"));
+    g_assert_false(ms_alert_from_json(json, &output, NULL));
+    json_object_put(json);
+}
+
+static void
+test_alert_json_accepts_older_parent_evidence(void)
+{
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json = ms_alert_to_json(&input);
+
+    json_object_object_del(json, "parent_comm");
+    json_object_object_del(json, "parent_sha256");
+    g_assert_true(ms_alert_from_json(json, &output, NULL));
+    g_assert_cmpstr(output.parent_comm, ==, "");
+    g_assert_cmpstr(output.parent_sha256, ==, "");
     json_object_put(json);
 }
 
@@ -156,6 +190,10 @@ main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/alert-json/round-trip", test_alert_json_round_trip);
     g_test_add_func("/alert-json/round-trip-blocked", test_alert_json_round_trips_blocked_action);
+    g_test_add_func("/alert-json/invalid-parent-hash",
+                    test_alert_json_rejects_invalid_parent_hash);
+    g_test_add_func("/alert-json/older-parent-evidence",
+                    test_alert_json_accepts_older_parent_evidence);
     g_test_add_func("/alert-json/action", test_alert_json_rejects_missing_or_invalid_action);
     g_test_add_func("/alert-json/invalid-username", test_alert_json_rejects_invalid_username);
     g_test_add_func("/alert-json/missing-field", test_alert_json_rejects_missing_field);

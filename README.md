@@ -14,6 +14,7 @@ MemSpy is not a complete endpoint-protection product. Response mode blocks only 
 - Optional BPF LSM response mode that blocks `memfd` execution, off by default
 - Bounded event correlation and explicit degraded-health reporting
 - Root-owned SQLite alert storage with automatic 30-day retention
+- Parent-process name, executable path, and SHA-256 investigation context
 - Versioned Unix-domain socket API with read-only alert access and Polkit-authorized response control—no TCP or UDP listener
 - High-severity desktop notifications only
 - GNOME AppIndicator and KDE Plasma StatusNotifier integration
@@ -206,13 +207,13 @@ journalctl -u memspyd -n 100 --no-pager
 
 ## Privacy and security boundaries
 
-Stored alert fields include timestamps, rule and severity, PID/parent PID, UID, process name, executable path, a bounded command line, target-process metadata, and textual evidence.
+Stored alert fields include timestamps, rule and severity, PID/parent PID, UID, process name, executable path, a bounded command line, parent-process name/path/SHA-256, target-process metadata, and textual evidence. Parent hashes are calculated from the opened executable image and are limited to 128 MiB; unavailable or oversized images leave the alert marked as incomplete.
 
 The project does not collect:
 
 - process memory or payload bytes
 - environment variables
-- file contents
+- retained file contents (executables may be read to calculate SHA-256 evidence)
 - packet or network content
 - remote telemetry
 

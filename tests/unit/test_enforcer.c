@@ -210,6 +210,8 @@ test_event_conversion(void)
     g_assert_cmpstr(alert.evidence, ==, "BPF LSM denied memfd execution");
     g_assert_nonnull(strstr(alert.launcher_exe, "test-enforcer"));
     g_assert_true(alert.parent_exe[0] == '/' || alert.enrichment_incomplete);
+    g_assert_true(alert.parent_comm[0] != '\0' || alert.enrichment_incomplete);
+    g_assert_true(strlen(alert.parent_sha256) == 64U || alert.enrichment_incomplete);
     if (password != NULL)
         g_assert_cmpstr(alert.username, ==, password->pw_name);
 }

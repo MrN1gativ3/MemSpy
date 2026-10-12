@@ -37,6 +37,10 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
     g_strlcpy(alert.exe, "/memfd:fixture (deleted)", sizeof alert.exe);
     g_strlcpy(alert.cmdline, cmdline, sizeof alert.cmdline);
     g_strlcpy(alert.parent_exe, "/usr/bin/terminal", sizeof alert.parent_exe);
+    g_strlcpy(alert.parent_comm, "terminal", sizeof alert.parent_comm);
+    g_strlcpy(alert.parent_sha256,
+              "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof alert.parent_sha256);
     g_strlcpy(alert.evidence, "memfd-backed executable image", sizeof alert.evidence);
     return alert;
 }
@@ -279,7 +283,12 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Detection"));
     g_assert_true(has_label_text(widget, "User"));
     g_assert_true(has_label_text(widget, "Process"));
-    g_assert_true(has_label_text(widget, "Parent process"));
+    g_assert_true(has_label_text(widget, "Parent process name"));
+    g_assert_true(has_label_text(widget, "Parent PID"));
+    g_assert_true(has_label_text(widget, "Parent executable"));
+    g_assert_true(has_label_text(widget, "Parent SHA-256"));
+    g_assert_true(has_label_text(widget,
+        "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"));
     g_assert_true(has_label_text(widget, "Attempted executable"));
     g_assert_true(has_label_text(widget, "Command line"));
     g_assert_true(has_label_text(widget, "Launcher executable"));

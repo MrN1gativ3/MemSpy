@@ -15,6 +15,7 @@
 #include <unistd.h>
 
 #include "memspy_enforce.skel.h"
+#include "process_evidence.h"
 
 enum {
     MAP_ENABLED,
@@ -185,7 +186,11 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
     }
     complete = read_username(alert->uid, alert->username, sizeof alert->username) &&
                read_link(alert->pid, alert->launcher_exe, sizeof alert->launcher_exe) &&
-               read_link(alert->ppid, alert->parent_exe, sizeof alert->parent_exe);
+               ms_process_evidence_read(alert->ppid, alert->parent_comm,
+                                        sizeof alert->parent_comm,
+                                        alert->parent_exe, sizeof alert->parent_exe,
+                                        alert->parent_sha256,
+                                        sizeof alert->parent_sha256);
     alert->enrichment_incomplete |= !complete;
     clock_gettime(CLOCK_REALTIME, &now);
     alert->timestamp_utc = now.tv_sec;

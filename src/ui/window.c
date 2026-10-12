@@ -183,7 +183,7 @@ create_alert_row(struct alert_view *view)
         g_date_time_format(date, "%x · %X");
     char process_text[256];
     char user_text[MS_USERNAME_BYTES + 64U];
-    char parent_text[MS_PATH_BYTES + 64U];
+    char parent_pid[32];
     char target_pid[32];
     char accessible_name[256];
 
@@ -221,16 +221,13 @@ create_alert_row(struct alert_view *view)
         snprintf(user_text, sizeof user_text, "UID %u", (unsigned int)view->alert.uid);
     add_detail_field(details, "User", user_text, false);
     add_detail_field(details, "Process", process_text, true);
-    if (view->alert.ppid > 0 || view->alert.parent_exe[0] != '\0') {
-        if (view->alert.parent_exe[0] != '\0' && view->alert.ppid > 0)
-            snprintf(parent_text, sizeof parent_text, "%s · PID %d",
-                     view->alert.parent_exe, view->alert.ppid);
-        else if (view->alert.parent_exe[0] != '\0')
-            snprintf(parent_text, sizeof parent_text, "%s", view->alert.parent_exe);
-        else
-            snprintf(parent_text, sizeof parent_text, "PID %d", view->alert.ppid);
-        add_detail_field(details, "Parent process", parent_text, true);
+    add_detail_field(details, "Parent process name", view->alert.parent_comm, true);
+    if (view->alert.ppid > 0) {
+        snprintf(parent_pid, sizeof parent_pid, "%d", view->alert.ppid);
+        add_detail_field(details, "Parent PID", parent_pid, true);
     }
+    add_detail_field(details, "Parent executable", view->alert.parent_exe, true);
+    add_detail_field(details, "Parent SHA-256", view->alert.parent_sha256, true);
 
     gtk_box_pack_start(GTK_BOX(details), new_detail_section("Execution"), false, false, 0);
     add_detail_field(details, blocked ? "Attempted executable" : "Executable",

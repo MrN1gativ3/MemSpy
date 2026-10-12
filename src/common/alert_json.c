@@ -56,6 +56,27 @@ add_string(json_object *object, const char *name, const char *value, size_t capa
     return true;
 }
 
+static bool
+valid_sha256(const char *value)
+{
+    const char *end = memchr(value, '\0', MS_SHA256_BYTES);
+    size_t length;
+
+    if (end == NULL)
+        return false;
+    length = (size_t)(end - value);
+    if (length == 0)
+        return true;
+    if (length != 64U)
+        return false;
+    for (size_t index = 0; index < 64U; ++index) {
+        if (!g_ascii_isdigit(value[index]) &&
+            (value[index] < 'a' || value[index] > 'f'))
+            return false;
+    }
+    return true;
+}
+
 json_object *
 ms_alert_to_json(const struct ms_alert *alert)
 {
@@ -64,7 +85,8 @@ ms_alert_to_json(const struct ms_alert *alert)
     json_object *object;
 
     if (alert == NULL || (severity = severity_name(alert->severity)) == NULL ||
-        (action = action_name(alert->action)) == NULL)
+        (action = action_name(alert->action)) == NULL ||
+        !valid_sha256(alert->parent_sha256))
         return NULL;
 
     object = json_object_new_object();
@@ -87,7 +109,10 @@ ms_alert_to_json(const struct ms_alert *alert)
         !add_string(object, "exe", alert->exe, sizeof alert->exe) ||
         !add_string(object, "cmdline", alert->cmdline, sizeof alert->cmdline) ||
         !add_string(object, "launcher_exe", alert->launcher_exe, sizeof alert->launcher_exe) ||
+        !add_string(object, "parent_comm", alert->parent_comm, sizeof alert->parent_comm) ||
         !add_string(object, "parent_exe", alert->parent_exe, sizeof alert->parent_exe) ||
+        !add_string(object, "parent_sha256", alert->parent_sha256,
+                    sizeof alert->parent_sha256) ||
         !add_string(object, "target_exe", alert->target_exe, sizeof alert->target_exe) ||
         !add_string(object, "evidence", alert->evidence, sizeof alert->evidence)) {
         json_object_put(object);
@@ -126,6 +151,19 @@ copy_string(json_object *parent, const char *name, char *destination, size_t cap
     memcpy(destination, text, length);
     destination[length] = '\0';
     return true;
+}
+
+static bool
+copy_optional_string(json_object *parent, const char *name, char *destination,
+                     size_t capacity, struct ms_error *error)
+{
+    json_object *value;
+
+    if (!json_object_object_get_ex(parent, name, &value)) {
+        destination[0] = '\0';
+        return true;
+    }
+    return copy_string(parent, name, destination, capacity, error);
 }
 
 static bool
@@ -219,9 +257,17 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
         !copy_string(json, "exe", parsed.exe, sizeof parsed.exe, error) ||
         !copy_string(json, "cmdline", parsed.cmdline, sizeof parsed.cmdline, error) ||
         !copy_string(json, "launcher_exe", parsed.launcher_exe, sizeof parsed.launcher_exe, error) ||
+        !copy_optional_string(json, "parent_comm", parsed.parent_comm,
+                              sizeof parsed.parent_comm, error) ||
         !copy_string(json, "parent_exe", parsed.parent_exe, sizeof parsed.parent_exe, error) ||
+        !copy_optional_string(json, "parent_sha256", parsed.parent_sha256,
+                              sizeof parsed.parent_sha256, error) ||
         !get_nonnegative_int(json, "target_pid", INT_MAX, &number, error))
         return false;
+    if (!valid_sha256(parsed.parent_sha256)) {
+        set_error(error, "invalid_alert", "field 'parent_sha256' is invalid");
+        return false;
+    }
     parsed.target_pid = (pid_t)number;
     if (!copy_string(json, "target_exe", parsed.target_exe, sizeof parsed.target_exe, error) ||
         !copy_string(json, "evidence", parsed.evidence, sizeof parsed.evidence, error) ||

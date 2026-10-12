@@ -37,7 +37,9 @@ struct ms_observation {
     char username[MS_USERNAME_BYTES];
     char exe[MS_PATH_BYTES];
     char cmdline[MS_MAX_CMDLINE_BYTES + 1U];
+    char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
+    char parent_sha256[MS_SHA256_BYTES];
     char target_exe[MS_PATH_BYTES];
     bool enrichment_incomplete;
     bool arguments_truncated;

@@ -81,6 +81,7 @@ daemon_sources = [
   'src/daemon/api.c',
   'src/daemon/sensor.c',
   'src/daemon/enforcer.c',
+  'src/daemon/process_evidence.c',
   'src/daemon/response_config.c',
   'src/daemon/authorizer.c',
   'src/common/alert_json.c',
