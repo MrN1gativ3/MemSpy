@@ -19,6 +19,17 @@ set +e
 ASAN_OPTIONS=detect_leaks=0 "$binary" status >"$tmp/out" 2>"$tmp/err"
 status=$?
 set -e
-[ "$status" -eq 3 ]
-[ ! -s "$tmp/out" ]
-grep -q '^memspyctl:' "$tmp/err"
+case $status in
+    0)
+        [ -s "$tmp/out" ]
+        [ ! -s "$tmp/err" ]
+        ;;
+    3)
+        [ ! -s "$tmp/out" ]
+        grep -q '^memspyctl:' "$tmp/err"
+        ;;
+    *)
+        echo "unexpected status exit code: $status" >&2
+        exit 1
+        ;;
+esac
