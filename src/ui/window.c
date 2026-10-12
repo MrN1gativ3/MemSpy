@@ -48,13 +48,18 @@ static void
 constrain_content_width(GtkWidget *widget, GtkAllocation *allocation, gpointer userdata)
 {
     GtkWidget *content = userdata;
-    int margin = MAX((allocation->width - MS_UI_MAX_CONTENT_WIDTH) / 2, 0);
+    GtkAllocation content_allocation;
+    int excess;
 
     (void)widget;
-    if (gtk_widget_get_margin_start(content) != margin) {
-        gtk_widget_set_margin_start(content, margin);
-        gtk_widget_set_margin_end(content, margin);
-    }
+    (void)allocation;
+    gtk_widget_get_allocation(content, &content_allocation);
+    excess = content_allocation.width - MS_UI_MAX_CONTENT_WIDTH;
+    if (excess <= 0)
+        return;
+    content_allocation.x += excess / 2;
+    content_allocation.width = MS_UI_MAX_CONTENT_WIDTH;
+    gtk_widget_size_allocate(content, &content_allocation);
 }
 
 static gboolean
