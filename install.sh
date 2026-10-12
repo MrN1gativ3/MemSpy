@@ -228,10 +228,10 @@ else
     desktop_option=enabled
 fi
 if [ -f "$build_dir/meson-private/coredata.dat" ]; then
-    meson setup --reconfigure "$build_dir" --prefix=/usr --buildtype=release \
+    meson setup --reconfigure "$build_dir" --prefix=/opt/memspy --buildtype=release \
         -Dintegration_tests=false -Ddesktop_ui="$desktop_option"
 else
-    meson setup "$build_dir" --prefix=/usr --buildtype=release \
+    meson setup "$build_dir" --prefix=/opt/memspy --buildtype=release \
         -Dintegration_tests=false -Ddesktop_ui="$desktop_option"
 fi
 meson compile -C "$build_dir"
@@ -280,10 +280,22 @@ rm -f /run/filelessd/filelessd.sock \
     /etc/xdg/autostart/org.fileless.DetectorUI.desktop
 rmdir /run/filelessd /usr/libexec/filelessd /usr/share/fileless-detector 2>/dev/null || true
 groupdel filelessd-ui >/dev/null 2>&1 || true
+
+rm -f /usr/bin/memspyd \
+    /usr/bin/memspyctl \
+    /usr/bin/memspy-ui \
+    /usr/libexec/memspy/memspy.bpf.o \
+    /usr/libexec/memspy/memspy_enforce.bpf.o \
+    /usr/libexec/memspy/migrate-legacy \
+    /usr/libexec/memspy/cleanup-bpf \
+    /usr/lib/systemd/system/memspyd.service \
+    /usr/share/memspy/memspy-ui.css
+rmdir /usr/libexec/memspy /usr/share/memspy 2>/dev/null || true
 systemctl daemon-reload
 
 echo
 echo "MemSpy is installed and running."
+echo "Application files: /opt/memspy"
 echo "Installation profile: $desktop_environment"
 if [ "$desktop_environment" = headless ]; then
     echo "Run: memspyctl status"

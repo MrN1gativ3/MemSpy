@@ -2,7 +2,7 @@
 Type=Application
 Name=MemSpy Indicator
 Comment=Show local fileless malware alerts in the desktop panel
-Exec=memspy-ui --background
+Exec=/opt/memspy/bin/memspy-ui --background
 Icon=memspy-healthy-symbolic
 Terminal=false
 OnlyShowIn=GNOME;KDE;

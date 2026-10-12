@@ -5,6 +5,11 @@ project(
   default_options: ['c_std=c17', 'warning_level=3', 'werror=true', 'b_pie=true'],
 )
 
+memspy_prefix = '/opt/memspy'
+memspy_bindir = memspy_prefix / 'bin'
+memspy_libexecdir = memspy_prefix / 'libexec/memspy'
+memspy_datadir = memspy_prefix / 'share/memspy'
+
 add_project_arguments('-fstack-protector-strong', language: 'c')
 add_project_link_arguments('-Wl,-z,relro,-z,now', language: 'c')
 if get_option('optimization') != '0'
@@ -34,7 +39,7 @@ bpf_object = custom_target(
             '-I/usr/include/' + host_machine.cpu_family() + '-linux-gnu',
             '-I' + meson.current_source_dir() / 'src/bpf', '-c', '@INPUT@', '-o', '@OUTPUT@'],
   install: true,
-  install_dir: get_option('libexecdir') / 'memspy',
+  install_dir: memspy_libexecdir,
 )
 
 bpf_skeleton = custom_target(
@@ -61,7 +66,7 @@ enforce_bpf_object = custom_target(
             '-I' + meson.current_source_dir() / 'src/bpf',
             '-c', '@INPUT0@', '-o', '@OUTPUT@'],
   install: true,
-  install_dir: get_option('libexecdir') / 'memspy',
+  install_dir: memspy_libexecdir,
 )
 
 enforce_bpf_skeleton = custom_target(
@@ -101,7 +106,10 @@ memspyd = executable(
   c_args: ['-Wno-overlength-strings'],
   pie: true,
   install: true,
+  install_dir: memspy_bindir,
 )
+install_symlink('memspyd', pointing_to: memspy_bindir / 'memspyd',
+                install_dir: '/usr/local/bin')
 
 if desktop_enabled
 memspy_ui = executable(
@@ -118,7 +126,10 @@ memspy_ui = executable(
   dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, gtk_dep, appindicator_dep, libnotify_dep],
   pie: true,
   install: true,
+  install_dir: memspy_bindir,
 )
+install_symlink('memspy-ui', pointing_to: memspy_bindir / 'memspy-ui',
+                install_dir: '/usr/local/bin')
 endif
 
 memspyctl = executable(
@@ -132,45 +143,49 @@ memspyctl = executable(
   dependencies: [glib_dep, json_c_dep, sqlite_dep],
   pie: true,
   install: true,
+  install_dir: memspy_bindir,
 )
+install_symlink('memspyctl', pointing_to: memspy_bindir / 'memspyctl',
+                install_dir: '/usr/local/bin')
 
-install_data('config/allowlist.conf', install_dir: get_option('sysconfdir') / 'memspy')
+install_data('config/allowlist.conf', install_dir: '/etc/memspy')
 install_data('config/response-allowlist.conf',
-             install_dir: get_option('sysconfdir') / 'memspy')
+             install_dir: '/etc/memspy')
 install_data('packaging/common/migrate-legacy.sh',
-             install_dir: get_option('libexecdir') / 'memspy',
+             install_dir: memspy_libexecdir,
              install_mode: 'rwxr-xr-x',
              rename: 'migrate-legacy')
 install_data('packaging/common/cleanup-bpf.sh',
-             install_dir: get_option('libexecdir') / 'memspy',
+             install_dir: memspy_libexecdir,
              install_mode: 'rwxr-xr-x',
              rename: 'cleanup-bpf')
 install_data('packaging/common/memspyd.service',
-             install_dir: get_option('prefix') / 'lib/systemd/system')
+             install_dir: '/etc/systemd/system')
 install_data('packaging/common/memspyd.tmpfiles',
-             install_dir: get_option('prefix') / 'lib/tmpfiles.d',
+             install_dir: '/usr/lib/tmpfiles.d',
              rename: 'memspyd.conf')
 install_data('packaging/common/memspyd.sysusers',
-             install_dir: get_option('prefix') / 'lib/sysusers.d',
+             install_dir: '/usr/lib/sysusers.d',
              rename: 'memspyd.conf')
 install_data('packaging/common/org.memspy.response.policy',
-             install_dir: get_option('datadir') / 'polkit-1/actions')
-install_man('docs/memspyd.8', 'docs/memspyctl.1')
+             install_dir: '/usr/share/polkit-1/actions')
+install_man('docs/memspyd.8', install_dir: '/usr/share/man/man8')
+install_man('docs/memspyctl.1', install_dir: '/usr/share/man/man1')
 if desktop_enabled
-  install_data('data/memspy-ui.css', install_dir: get_option('datadir') / 'memspy')
+  install_data('data/memspy-ui.css', install_dir: memspy_datadir)
   install_data('packaging/common/org.memspy.MemSpyUI.desktop',
-               install_dir: get_option('datadir') / 'applications')
+               install_dir: '/usr/share/applications')
   install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',
-               install_dir: get_option('sysconfdir') / 'xdg/autostart',
+               install_dir: '/etc/xdg/autostart',
                rename: 'org.memspy.MemSpyUI.desktop')
   install_data(
     'data/icons/memspy-healthy-symbolic.svg',
     'data/icons/memspy-medium-symbolic.svg',
     'data/icons/memspy-high-symbolic.svg',
     'data/icons/memspy-offline-symbolic.svg',
-    install_dir: get_option('datadir') / 'icons/hicolor/scalable/status',
+    install_dir: '/usr/share/icons/hicolor/scalable/status',
   )
-  install_man('docs/memspy-ui.1')
+  install_man('docs/memspy-ui.1', install_dir: '/usr/share/man/man1')
 endif
 
 subdir('tests')

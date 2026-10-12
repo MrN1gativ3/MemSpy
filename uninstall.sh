@@ -7,29 +7,42 @@ fail()
     exit 2
 }
 
-remove_data=false
 case "${1:-}" in
     "") ;;
-    --remove-data) remove_data=true ;;
+    --remove-data) ;; # Retained for compatibility with earlier releases.
     -h|--help)
-        echo "Usage: sudo ./uninstall.sh [--remove-data]"
+        echo "Usage: sudo ./uninstall.sh"
         exit 0
         ;;
-    *) fail "usage: sudo ./uninstall.sh [--remove-data]" ;;
+    *) fail "usage: sudo ./uninstall.sh" ;;
 esac
-test "$#" -le 1 || fail "usage: sudo ./uninstall.sh [--remove-data]"
+test "$#" -le 1 || fail "usage: sudo ./uninstall.sh"
 test "$(id -u)" -eq 0 || fail "run with sudo: sudo ./uninstall.sh"
 
 systemctl disable --now memspyd.service >/dev/null 2>&1 || true
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
-cleanup=/usr/libexec/memspy/cleanup-bpf
+cleanup=/opt/memspy/libexec/memspy/cleanup-bpf
 if [ ! -x "$cleanup" ]; then
     cleanup=$script_dir/packaging/common/cleanup-bpf.sh
 fi
 "$cleanup"
+sh "$script_dir/packaging/common/remove-state.sh" /var/lib/memspy
 
 rm -f -- \
+    /usr/local/bin/memspyd \
+    /usr/local/bin/memspyctl \
+    /usr/local/bin/memspy-ui \
+    /opt/memspy/bin/memspyd \
+    /opt/memspy/bin/memspyctl \
+    /opt/memspy/bin/memspy-ui \
+    /opt/memspy/libexec/memspy/memspy.bpf.o \
+    /opt/memspy/libexec/memspy/memspy_enforce.bpf.o \
+    /opt/memspy/libexec/memspy/migrate-legacy \
+    /opt/memspy/libexec/memspy/cleanup-bpf \
+    /opt/memspy/share/memspy/memspy-ui.css \
+    /etc/systemd/system/memspyd.service \
     /usr/bin/memspyd \
+    /usr/bin/memspyctl \
     /usr/bin/memspy-ui \
     /usr/libexec/memspy/memspy.bpf.o \
     /usr/libexec/memspy/memspy_enforce.bpf.o \
@@ -51,19 +64,8 @@ rm -f -- \
     /usr/share/man/man8/memspyd.8 \
     /usr/share/man/man8/memspyd.8.gz
 
-if [ "$remove_data" = true ]; then
-    rm -f -- \
-        /var/lib/memspy/alerts.db \
-        /var/lib/memspy/alerts.db-shm \
-        /var/lib/memspy/alerts.db-wal \
-        /var/lib/memspy/response-mode
-    rmdir -- /var/lib/memspy 2>/dev/null || true
-fi
-
-rmdir -- /usr/libexec/memspy /usr/share/memspy 2>/dev/null || true
+rmdir -- /opt/memspy/bin /opt/memspy/libexec/memspy /opt/memspy/libexec \
+    /opt/memspy/share/memspy /opt/memspy/share /opt/memspy \
+    /usr/libexec/memspy /usr/share/memspy 2>/dev/null || true
 systemctl daemon-reload
-if [ "$remove_data" = true ]; then
-    echo "MemSpy removed. Configuration was preserved; alert history and response state were removed."
-else
-    echo "MemSpy removed. Configuration, alert history, and response state were preserved."
-fi
+echo "MemSpy removed. Configuration was preserved; alert history and response state were removed."

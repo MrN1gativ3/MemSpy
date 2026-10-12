@@ -403,7 +403,7 @@ static void
 load_css(void)
 {
     GtkCssProvider *provider = gtk_css_provider_new();
-    const char *installed = "/usr/share/memspy/memspy-ui.css";
+    const char *installed = "/opt/memspy/share/memspy/memspy-ui.css";
     const char *path = g_file_test(installed, G_FILE_TEST_IS_REGULAR) ? installed : "data/memspy-ui.css";
     gtk_css_provider_load_from_path(provider, path, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),

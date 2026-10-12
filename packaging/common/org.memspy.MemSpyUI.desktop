@@ -2,7 +2,7 @@
 Type=Application
 Name=MemSpy
 Comment=View local fileless malware alerts
-Exec=memspy-ui
+Exec=/opt/memspy/bin/memspy-ui
 Icon=memspy-healthy-symbolic
 Terminal=false
 Categories=System;Security;GTK;

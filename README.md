@@ -76,7 +76,7 @@ Clone or copy this repository into a supported x86_64 VM, open a terminal in the
 sudo ./install.sh
 ```
 
-The installer detects the distribution and profile, validates the architecture, kernel, BTF, and systemd, installs only the required dependencies, builds and tests MemSpy, installs it, and starts the daemon. A host without GNOME or KDE automatically receives the headless daemon and CLI profile.
+The installer detects the distribution and profile, validates the architecture, kernel, BTF, and systemd, installs only the required dependencies, builds and tests MemSpy, installs its application payload under `/opt/memspy`, and starts the daemon. Configuration remains under `/etc/memspy`, persistent state under `/var/lib/memspy`, and runtime state under `/run/memspy`. Commands are available through `/usr/local/bin` links. A host without GNOME or KDE automatically receives the headless daemon and CLI profile.
 
 If both desktops are installed and the active one cannot be determined, select it explicitly:
 
@@ -139,13 +139,13 @@ The matrix script intentionally performs memory-backed execution, deleted-image 
 For a release-style install-layout check:
 
 ```sh
-meson setup build-package --prefix=/usr --buildtype=release
+meson setup build-package --prefix=/opt/memspy --buildtype=release
 meson compile -C build-package
 meson test -C build-package --no-suite privileged --print-errorlogs
 sh tests/package/test_install.sh build-package desktop
 
 # Headless build without desktop development libraries
-meson setup build-headless --prefix=/usr --buildtype=release -Ddesktop_ui=disabled
+meson setup build-headless --prefix=/opt/memspy --buildtype=release -Ddesktop_ui=disabled
 meson compile -C build-headless
 meson test -C build-headless --no-suite privileged --print-errorlogs
 sh tests/package/test_install.sh build-headless headless
@@ -155,6 +155,7 @@ sh tests/package/test_install.sh build-headless headless
 
 | Path | Purpose | Access |
 | --- | --- | --- |
+| `/opt/memspy` | MemSpy executables and private application assets | `root` owned |
 | `/var/lib/memspy/alerts.db` | SQLite alert database | `root`, mode `0600` |
 | `/run/memspy/memspy.sock` | Local alert and response-control API | `root:memspy-ui`, mode `0660` |
 | `/etc/memspy/allowlist.conf` | Exact-path allowlist | Administrator managed |
@@ -222,10 +223,10 @@ Recovery commands:
 sudo systemctl restart memspyd
 sudo journalctl -u memspyd -n 100 --no-pager
 sudo systemctl stop memspyd
-sudo /usr/libexec/memspy/cleanup-bpf
+sudo /opt/memspy/libexec/memspy/cleanup-bpf
 ```
 
-The cleanup helper disables response mode and removes only pins below `/sys/fs/bpf/memspy`; use it only while `memspyd` is stopped. `sudo ./uninstall.sh` preserves configuration and alert history. Add `--remove-data` only when that history and the saved response state should be deleted.
+The cleanup helper disables response mode and removes only pins below `/sys/fs/bpf/memspy`; use it only while `memspyd` is stopped. `sudo ./uninstall.sh` preserves configuration under `/etc/memspy`, but permanently removes alert history and the saved response state so a later reinstall starts with an empty dashboard and response mode off.
 
 ## Health states
 

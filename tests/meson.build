@@ -178,6 +178,10 @@ test('migration', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_migration.sh',
             meson.project_source_root() / 'packaging/common/migrate-legacy.sh'])
 
+test('uninstall-state', find_program('sh'),
+     args: [meson.current_source_dir() / 'package/test_uninstall_state.sh',
+            meson.project_source_root() / 'packaging/common/remove-state.sh'])
+
 test('ci-dependencies', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ci_dependencies.sh',
             meson.project_source_root() / '.github/workflows/ci.yml'])
