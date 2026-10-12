@@ -52,15 +52,17 @@ static void test_proc_mem_target_resolution(void)
     g_assert_cmpint(g_mkdir_with_parents(target, 0700), ==, 0);
     g_assert_cmpint(symlink("/proc/200/mem", fd_path), ==, 0);
     g_assert_cmpint(symlink("/usr/bin/target", exe), ==, 0);
-    g_assert_true(ms_proc_mem_target_read(root, 100, 7, &namespace_pid, &host_pid,
-                                          target_exe, sizeof target_exe));
+    g_assert_cmpint(ms_proc_mem_target_read(root, 100, 7, &namespace_pid, &host_pid,
+                                            target_exe, sizeof target_exe),
+                    ==, MS_PROC_MEM_RESOLVED);
     g_assert_cmpint(namespace_pid, ==, 200);
     g_assert_cmpint(host_pid, ==, 200);
     g_assert_cmpstr(target_exe, ==, "/usr/bin/target");
     g_unlink(fd_path);
     g_assert_cmpint(symlink("/tmp/ordinary", fd_path), ==, 0);
-    g_assert_false(ms_proc_mem_target_read(root, 100, 7, &namespace_pid, &host_pid,
-                                           target_exe, sizeof target_exe));
+    g_assert_cmpint(ms_proc_mem_target_read(root, 100, 7, &namespace_pid, &host_pid,
+                                            target_exe, sizeof target_exe),
+                    ==, MS_PROC_MEM_IRRELEVANT);
     g_unlink(fd_path);
     g_unlink(exe);
     g_rmdir(fd_dir);

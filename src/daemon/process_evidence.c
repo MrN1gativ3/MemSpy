@@ -252,9 +252,10 @@ bool ms_process_evidence_read(pid_t pid, struct ms_process_evidence *evidence)
     return ms_process_evidence_read_at("/proc", pid, evidence);
 }
 
-bool ms_proc_mem_target_read(const char *proc_root, pid_t source_pid, int fd,
-                             pid_t *namespace_pid, pid_t *host_pid,
-                             char *target_exe, size_t capacity)
+enum ms_proc_mem_result ms_proc_mem_target_read(const char *proc_root, pid_t source_pid,
+                                                int fd, pid_t *namespace_pid,
+                                                pid_t *host_pid, char *target_exe,
+                                                size_t capacity)
 {
     char descriptor[96];
     char link[MS_PATH_BYTES];
@@ -266,22 +267,22 @@ bool ms_proc_mem_target_read(const char *proc_root, pid_t source_pid, int fd,
 
     if (proc_root == NULL || source_pid <= 0 || fd < 0 || namespace_pid == NULL ||
         host_pid == NULL || target_exe == NULL || capacity < 2U)
-        return false;
+        return MS_PROC_MEM_IRRELEVANT;
     *namespace_pid = 0;
     *host_pid = 0;
     target_exe[0] = '\0';
     snprintf(descriptor, sizeof descriptor, "%s/%d/fd/%d", proc_root, source_pid, fd);
     length = readlink(descriptor, link, sizeof link - 1U);
     if (length <= 0 || (size_t)length >= sizeof link - 1U)
-        return false;
+        return MS_PROC_MEM_IRRELEVANT;
     link[length] = '\0';
     if (!g_str_has_prefix(link, "/proc/"))
-        return false;
+        return MS_PROC_MEM_IRRELEVANT;
     digits = link + strlen("/proc/");
     target = strtol(digits, &end, 10);
     if (end == digits || target <= 0 || target > G_MAXINT || strcmp(end, "/mem") != 0 ||
         target == source_pid)
-        return false;
+        return MS_PROC_MEM_IRRELEVANT;
     *namespace_pid = (pid_t)target;
 
     /* Canonical host-visible procfs paths use the same PID; namespace aliases stay incomplete. */
@@ -289,9 +290,9 @@ bool ms_proc_mem_target_read(const char *proc_root, pid_t source_pid, int fd,
     length = readlink(executable, target_exe, capacity - 1U);
     if (length <= 0 || (size_t)length >= capacity - 1U) {
         target_exe[0] = '\0';
-        return false;
+        return MS_PROC_MEM_INCOMPLETE;
     }
     target_exe[length] = '\0';
     *host_pid = (pid_t)target;
-    return true;
+    return MS_PROC_MEM_RESOLVED;
 }

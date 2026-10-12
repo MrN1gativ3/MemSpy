@@ -26,12 +26,19 @@ struct ms_process_evidence {
     bool complete;
 };
 
+enum ms_proc_mem_result {
+    MS_PROC_MEM_IRRELEVANT,
+    MS_PROC_MEM_RESOLVED,
+    MS_PROC_MEM_INCOMPLETE,
+};
+
 bool ms_process_cgroup_parse(const char *text, struct ms_process_evidence *evidence);
 bool ms_process_evidence_read_at(const char *proc_root, pid_t pid,
                                  struct ms_process_evidence *evidence);
 bool ms_process_evidence_read(pid_t pid, struct ms_process_evidence *evidence);
-bool ms_proc_mem_target_read(const char *proc_root, pid_t source_pid, int fd,
-                             pid_t *namespace_pid, pid_t *host_pid,
-                             char *target_exe, size_t capacity);
+enum ms_proc_mem_result ms_proc_mem_target_read(const char *proc_root, pid_t source_pid,
+                                                int fd, pid_t *namespace_pid,
+                                                pid_t *host_pid, char *target_exe,
+                                                size_t capacity);
 
 #endif

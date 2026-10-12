@@ -202,10 +202,18 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
     if (observation->kind == MS_OBSERVATION_PROC_MEM_WRITE) {
         pid_t namespace_pid = 0;
         pid_t host_pid = 0;
-        if (event->result <= 0 || event->aux > INT_MAX ||
-            !ms_proc_mem_target_read("/proc", observation->process.pid, (int)event->aux,
-                                     &namespace_pid, &host_pid, observation->target_exe,
-                                     sizeof observation->target_exe)) {
+        enum ms_proc_mem_result result;
+        if (event->result <= 0 || event->aux > INT_MAX)
+            return false;
+        result = ms_proc_mem_target_read("/proc", observation->process.pid, (int)event->aux,
+                                         &namespace_pid, &host_pid,
+                                         observation->target_exe,
+                                         sizeof observation->target_exe);
+        if (result == MS_PROC_MEM_IRRELEVANT) {
+            set_error(error, "irrelevant_observation", "write did not target process memory");
+            return false;
+        }
+        if (result == MS_PROC_MEM_INCOMPLETE) {
             set_error(error, "incomplete_observation",
                       "proc memory descriptor could not be confirmed");
             return false;
@@ -282,7 +290,7 @@ on_sample(void *context, int cpu, void *data, __u32 size)
         !ms_sensor_observation_from_event(data, &observation, &error)) {
         if (strcmp(error.code, "incomplete_observation") == 0)
             ++sensor->stats.incomplete_observations;
-        else
+        else if (strcmp(error.code, "irrelevant_observation") != 0)
             ++sensor->stats.invalid_events;
         return;
     }
