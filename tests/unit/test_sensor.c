@@ -106,7 +106,7 @@ test_sensor_enriches_parent_for_alert_candidate(void)
         .target_pid = (uint32_t)getppid(),
         .uid = (uint32_t)getuid(),
         .result = 1,
-        .observed_boottime_ns = 1234,
+        .observed_boottime_ns = UINT64_MAX,
     };
     struct ms_observation observation = {0};
 
@@ -133,26 +133,45 @@ test_sensor_rejects_wrong_abi(void)
 }
 
 static void
-test_sensor_ignores_ordinary_write(void)
+test_sensor_uses_kernel_certified_proc_mem_target(void)
 {
-    g_autofree char *path = NULL;
-    int descriptor = g_file_open_tmp("memspy-ordinary-write-XXXXXX", &path, NULL);
     struct ms_kernel_event event = {
         .abi_version = MS_KERNEL_EVENT_ABI,
         .kind = MS_KERNEL_FILE_WRITE,
         .pid = (uint32_t)getpid(),
+        .target_pid = (uint32_t)getppid(),
         .uid = (uint32_t)getuid(),
         .result = 1,
-        .aux = (uint64_t)descriptor,
+        .aux = (uint64_t)getppid(),
+        .observed_boottime_ns = UINT64_MAX,
     };
     struct ms_observation observation = {0};
     struct ms_error error = {0};
 
-    g_assert_cmpint(descriptor, >=, 0);
+    g_assert_true(ms_sensor_observation_from_event(&event, &observation, &error));
+    g_assert_cmpint(observation.kind, ==, MS_OBSERVATION_PROC_MEM_WRITE);
+    g_assert_cmpint(observation.target.pid, ==, getppid());
+    g_assert_true(g_path_is_absolute(observation.target_exe));
+}
+
+static void
+test_sensor_rejects_reused_proc_mem_target(void)
+{
+    struct ms_kernel_event event = {
+        .abi_version = MS_KERNEL_EVENT_ABI,
+        .kind = MS_KERNEL_FILE_WRITE,
+        .pid = (uint32_t)getpid(),
+        .target_pid = (uint32_t)getppid(),
+        .uid = (uint32_t)getuid(),
+        .result = 1,
+        .aux = (uint64_t)getppid(),
+        .observed_boottime_ns = 1,
+    };
+    struct ms_observation observation = {0};
+    struct ms_error error = {0};
+
     g_assert_false(ms_sensor_observation_from_event(&event, &observation, &error));
-    g_assert_cmpstr(error.code, ==, "irrelevant_observation");
-    close(descriptor);
-    g_unlink(path);
+    g_assert_cmpstr(error.code, ==, "incomplete_observation");
 }
 
 int
@@ -163,7 +182,10 @@ main(int argc, char **argv)
     g_test_add_func("/sensor/enrich-alert-parent",
                     test_sensor_enriches_parent_for_alert_candidate);
     g_test_add_func("/sensor/reject-abi", test_sensor_rejects_wrong_abi);
-    g_test_add_func("/sensor/ignore-ordinary-write", test_sensor_ignores_ordinary_write);
+    g_test_add_func("/sensor/kernel-certified-proc-mem-target",
+                    test_sensor_uses_kernel_certified_proc_mem_target);
+    g_test_add_func("/sensor/reused-proc-mem-target",
+                    test_sensor_rejects_reused_proc_mem_target);
     g_test_add_func("/sensor/format-argument-boundaries", test_sensor_formats_argument_boundaries);
     g_test_add_func("/sensor/format-invalid-utf8", test_sensor_repairs_invalid_utf8_arguments);
     g_test_add_func("/sensor/format-argument-count", test_sensor_marks_argument_count_truncated);

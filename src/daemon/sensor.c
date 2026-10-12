@@ -200,26 +200,10 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
     observation->timestamp_utc = now.tv_sec;
 
     if (observation->kind == MS_OBSERVATION_PROC_MEM_WRITE) {
-        pid_t namespace_pid = 0;
-        pid_t host_pid = 0;
-        enum ms_proc_mem_result result;
-        if (event->result <= 0 || event->aux > INT_MAX)
+        if (event->result <= 0 || event->target_pid == 0)
             return false;
-        result = ms_proc_mem_target_read("/proc", observation->process.pid, (int)event->aux,
-                                         &namespace_pid, &host_pid,
-                                         observation->target_exe,
-                                         sizeof observation->target_exe);
-        if (result == MS_PROC_MEM_IRRELEVANT) {
-            set_error(error, "irrelevant_observation", "write did not target process memory");
-            return false;
-        }
-        if (result == MS_PROC_MEM_INCOMPLETE) {
-            set_error(error, "incomplete_observation",
-                      "proc memory descriptor could not be confirmed");
-            return false;
-        }
-        observation->target_namespace_pid = namespace_pid;
-        observation->target.pid = host_pid;
+        observation->target_namespace_pid = (pid_t)event->aux;
+        observation->target.pid = (pid_t)event->target_pid;
     }
 
     actor_complete = read_process_stat(observation->process.pid, &observation->ppid,
@@ -238,9 +222,13 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
 
     if (observation->target.pid > 0) {
         if (!read_process_stat(observation->target.pid, NULL,
-                               &observation->target.start_boottime_ns) ||
-            !read_executable(observation->target.pid, observation->target_exe,
-                             sizeof observation->target_exe))
+                               &observation->target.start_boottime_ns))
+            actor_complete = false;
+        else if (observation->target.start_boottime_ns > observation->observed_boottime_ns) {
+            set_error(error, "incomplete_observation", "target PID was reused");
+            return false;
+        } else if (!read_executable(observation->target.pid, observation->target_exe,
+                                    sizeof observation->target_exe))
             actor_complete = false;
     }
     if (((observation->kind == MS_OBSERVATION_EXEC) &&
@@ -290,11 +278,16 @@ on_sample(void *context, int cpu, void *data, __u32 size)
         !ms_sensor_observation_from_event(data, &observation, &error)) {
         if (strcmp(error.code, "incomplete_observation") == 0)
             ++sensor->stats.incomplete_observations;
-        else if (strcmp(error.code, "irrelevant_observation") != 0)
+        else if (strcmp(error.code, "irrelevant_observation") == 0)
+            ++sensor->stats.irrelevant_events;
+        else
             ++sensor->stats.invalid_events;
         return;
     }
     ++sensor->stats.received_events;
+    if (observation.kind == MS_OBSERVATION_PROC_MEM_WRITE &&
+        observation.target_exe[0] == '\0')
+        ++sensor->stats.incomplete_observations;
     sensor->callback(&observation, sensor->userdata);
 }
 

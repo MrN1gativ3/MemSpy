@@ -14,6 +14,7 @@ struct ms_sensor_stats {
     uint64_t received_events;
     uint64_t lost_events;
     uint64_t invalid_events;
+    uint64_t irrelevant_events;
     uint64_t incomplete_observations;
 };
 

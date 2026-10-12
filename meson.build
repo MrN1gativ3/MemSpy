@@ -31,13 +31,21 @@ systemd_dep = dependency('libsystemd')
 clang = find_program('clang')
 bpftool = find_program('bpftool')
 
+vmlinux_header = custom_target(
+  'vmlinux-header',
+  output: 'vmlinux.h',
+  command: [bpftool, 'btf', 'dump', 'file', '/sys/kernel/btf/vmlinux', 'format', 'c'],
+  capture: true,
+)
+
 bpf_object = custom_target(
   'memspy-bpf',
-  input: 'src/bpf/memspy.bpf.c',
+  input: ['src/bpf/memspy.bpf.c', vmlinux_header],
   output: 'memspy.bpf.o',
   command: [clang, '-g', '-O2', '-target', 'bpf', '-D__TARGET_ARCH_x86',
-            '-I/usr/include/' + host_machine.cpu_family() + '-linux-gnu',
-            '-I' + meson.current_source_dir() / 'src/bpf', '-c', '@INPUT@', '-o', '@OUTPUT@'],
+            '-I' + meson.current_build_dir(),
+            '-I' + meson.current_source_dir() / 'src/bpf',
+            '-c', '@INPUT0@', '-o', '@OUTPUT@'],
   install: true,
   install_dir: memspy_libexecdir,
 )
@@ -47,13 +55,6 @@ bpf_skeleton = custom_target(
   input: bpf_object,
   output: 'memspy.skel.h',
   command: [bpftool, 'gen', 'skeleton', '@INPUT@'],
-  capture: true,
-)
-
-vmlinux_header = custom_target(
-  'vmlinux-header',
-  output: 'vmlinux.h',
-  command: [bpftool, 'btf', 'dump', 'file', '/sys/kernel/btf/vmlinux', 'format', 'c'],
   capture: true,
 )
 

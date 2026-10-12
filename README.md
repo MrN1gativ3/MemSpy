@@ -264,7 +264,7 @@ The daemon is privileged because it loads eBPF programs, owns the response polic
 ## Known limitations
 
 - Detection is best-effort for very short-lived processes because `/proc` enrichment can race with process exit.
-- `PROC_MEM_WRITE` recognizes canonical numeric procfs descriptors only. If the writer closes or reuses its descriptor before userspace confirms it, MemSpy records an incomplete observation and deliberately emits no alert rather than guessing.
+- `PROC_MEM_WRITE` validates procfs descriptors in eBPF and records both the host TGID and namespace-visible PID. If the target exits or its host PID is reused before enrichment, MemSpy records an incomplete observation instead of attributing the write to a new process.
 - Bounded kernel maps and queues can lose context under pressure; health changes to degraded rather than hiding the loss.
 - The initial rules intentionally favor precision over broad shell, encoded-command, or anonymous-memory heuristics.
 - Prevention is limited to `memfd` execution and requires an active BPF LSM; all other rules remain detection-only.

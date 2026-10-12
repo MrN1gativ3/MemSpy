@@ -12,6 +12,7 @@ struct harness {
     pid_t fixture_pid;
     const char *expected_rule;
     bool expect_none;
+    bool expect_no_loss;
     bool found;
 };
 
@@ -42,7 +43,8 @@ main(int argc, char **argv)
     if (argc != 3)
         return 2;
     harness.expected_rule = argv[2];
-    harness.expect_none = strcmp(argv[2], "NONE") == 0;
+    harness.expect_no_loss = strcmp(argv[2], "NO_LOSS") == 0;
+    harness.expect_none = harness.expect_no_loss || strcmp(argv[2], "NONE") == 0;
     harness.policy = ms_policy_new();
     if (!ms_sensor_open(&sensor, on_observation, &harness, &error) ||
         !ms_sensor_attach(sensor, &error)) {
@@ -71,6 +73,21 @@ main(int argc, char **argv)
     ms_policy_free(harness.policy);
     if (harness.expect_none && harness.found) {
         g_printerr("unexpected alert observed for ordinary execution\n");
+        return 1;
+    }
+    if (harness.expect_no_loss &&
+        (!WIFEXITED(child_status) || WEXITSTATUS(child_status) != 0)) {
+        g_printerr("ordinary-write fixture failed (child_status=%d)\n", child_status);
+        return 1;
+    }
+    if (harness.expect_no_loss &&
+        (stats.lost_events != 0 || stats.incomplete_observations != 0 ||
+         stats.irrelevant_events != 0)) {
+        g_printerr("ordinary writes affected sensor health "
+                   "(irrelevant=%llu incomplete=%llu lost=%llu)\n",
+                   (unsigned long long)stats.irrelevant_events,
+                   (unsigned long long)stats.incomplete_observations,
+                   (unsigned long long)stats.lost_events);
         return 1;
     }
     if (!harness.expect_none && !harness.found) {

@@ -9,3 +9,4 @@ build_dir=$1
 "$build_dir/sensor-harness" "$build_dir/ptrace_write" PTRACE_WRITE
 "$build_dir/sensor-harness" "$build_dir/proc_mem_write" PROC_MEM_WRITE
 "$build_dir/sensor-harness" "$build_dir/ordinary_exec" NONE
+"$build_dir/sensor-harness" "$build_dir/ordinary_write" NO_LOSS

@@ -6,6 +6,7 @@
 #include <stdlib.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/uio.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -19,6 +20,7 @@ int main(void)
     char value = 0x2a;
     int descriptor;
     int status;
+    struct iovec vector = {.iov_base = &value, .iov_len = 1};
 
     if (pipe(ready) != 0 || pipe(release) != 0)
         return 1;
@@ -41,9 +43,9 @@ int main(void)
     close(release[0]);
     if (child < 0 || read(ready[0], &address, sizeof address) != (ssize_t)sizeof address)
         return 1;
-    snprintf(path, sizeof path, "/proc/%d/mem", child);
+    snprintf(path, sizeof path, "/proc/%d/task/%d/mem", child, child);
     descriptor = open(path, O_RDWR | O_CLOEXEC);
-    if (descriptor < 0 || pwrite(descriptor, &value, 1, (off_t)address) != 1)
+    if (descriptor < 0 || pwritev(descriptor, &vector, 1, (off_t)address) != 1)
         return 1;
     usleep(250000);
     close(descriptor);

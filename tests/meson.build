@@ -218,7 +218,7 @@ ui_test = executable(
 test('ui', ui_test)
 endif
 
-foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'ordinary_exec']
+foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'ordinary_exec', 'ordinary_write']
   executable(fixture, '../test-samples/' + fixture + '.c', install: false)
 endforeach
 
