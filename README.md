@@ -1,8 +1,8 @@
 # MemSpy
 
-MemSpy is a local, detection-only Linux security monitor built with eBPF, libbpf, and C. It watches a focused set of high-confidence fileless execution and process-injection behaviors, retains alerts locally for 30 days, and displays them in a separate unprivileged desktop panel application.
+MemSpy is a local Linux security monitor built with eBPF, libbpf, and C. It watches a focused set of high-confidence fileless execution and process-injection behaviors, retains alerts locally for 30 days, and displays them in a separate unprivileged desktop panel application. Detection is always available on supported hosts; optional response mode can prevent `memfd` execution when the kernel has BPF LSM enabled.
 
-It is not an endpoint protection platform: it does not block execution, kill processes, quarantine files, inspect payload memory, or send telemetry.
+MemSpy is not a complete endpoint-protection product. Response mode blocks only `memfd` execution; it does not kill processes, quarantine files, inspect payload memory, prevent every fileless technique, or send telemetry.
 
 > **Project status:** development preview (`0.1.0`). The architecture and package definitions are production-oriented, but no kernel or distribution should be considered officially supported until the privileged VM test matrix passes on that exact combination. Test this project in a disposable VM before using it on a workstation.
 
@@ -11,9 +11,10 @@ It is not an endpoint protection platform: it does not block execution, kill pro
 - CO-RE eBPF sensor using tracepoints and a Linux 5.4-compatible perf buffer
 - Privileged system service separated from the unprivileged desktop UI
 - High-confidence rules for memory-backed execution, deleted executables, and cross-process writes
+- Optional BPF LSM response mode that blocks `memfd` execution, off by default
 - Bounded event correlation and explicit degraded-health reporting
 - Root-owned SQLite alert storage with automatic 30-day retention
-- Read-only, versioned Unix-domain socket API—no TCP or UDP listener
+- Versioned Unix-domain socket API with read-only alert access and Polkit-authorized response control—no TCP or UDP listener
 - High-severity desktop notifications only
 - GNOME AppIndicator and KDE Plasma StatusNotifier integration
 - Exact rule/path allowlist with fail-closed configuration validation
@@ -39,13 +40,15 @@ flowchart LR
     B --> D[memspyd daemon]
     D --> P[Correlation and policy]
     P --> S[(SQLite alerts<br/>30-day retention)]
-    D --> A[Read-only Unix socket]
+    D --> A[Local Unix socket]
     A --> U[memspy-ui]
     U --> I[Panel status and alert window]
     U --> N[High-severity notifications]
+    U -->|Polkit-authorized toggle| R[Optional BPF LSM response]
+    R -->|deny memfd exec| K
 ```
 
-The eBPF programs collect only the kernel events required by the rules. Policy, enrichment, correlation, storage, and API handling remain in user space. Quitting the UI does not stop detection.
+The observational eBPF programs collect only the kernel events required by the rules. Policy, enrichment, correlation, storage, and API handling remain in user space. A separate optional BPF LSM program performs the narrow `memfd` execution decision. Quitting the UI stops neither detection nor an already enabled response policy.
 
 ## Supported environment
 
@@ -92,7 +95,7 @@ journalctl -u memspyd
 
 ## Manual build and test for contributors
 
-The project uses Meson, Ninja, Clang, and bpftool. Required libraries are libbpf, SQLite, json-c, GLib, GTK 3, Ayatana AppIndicator, and libnotify.
+The project uses Meson, Ninja, Clang, and bpftool. Required libraries are libbpf, SQLite, json-c, GLib, GTK 3, Ayatana AppIndicator, libnotify, and PolicyKit.
 
 Build with AddressSanitizer and UndefinedBehaviorSanitizer, then run every non-privileged test:
 
@@ -125,8 +128,11 @@ sh tests/package/test_install.sh build-package
 | Path | Purpose | Access |
 | --- | --- | --- |
 | `/var/lib/memspy/alerts.db` | SQLite alert database | `root`, mode `0600` |
-| `/run/memspy/memspy.sock` | Read-only local API | `root:memspy-ui`, mode `0660` |
+| `/run/memspy/memspy.sock` | Local alert and response-control API | `root:memspy-ui`, mode `0660` |
 | `/etc/memspy/allowlist.conf` | Exact-path allowlist | Administrator managed |
+| `/etc/memspy/response-allowlist.conf` | Response launcher exemptions | Administrator managed |
+| `/var/lib/memspy/response-mode` | Last confirmed response state | `root`, mode `0600` |
+| `/sys/fs/bpf/memspy` | MemSpy response maps and links | MemSpy-owned pins only |
 
 Membership in `memspy-ui` permits a user to read process metadata contained in alerts for every local user. Add only trusted desktop accounts:
 
@@ -148,11 +154,44 @@ Wildcards and command-line matches are intentionally unsupported. Invalid entrie
 sudo systemctl restart memspyd
 ```
 
+## Response mode
+
+Response mode is off by default. On a host with BPF LSM support, the window shows a native **Response mode** switch. Enabling or disabling it asks the desktop PolicyKit agent for administrator authentication; MemSpy itself never reads or stores the password. The UI reports one of four states:
+
+- **Off — Detection only:** alerts are generated, but execution is not prevented.
+- **On — Blocking memfd execution:** non-exempt `memfd` execution is denied with `EACCES` and recorded as `BLOCKED_MEMFD_EXEC`.
+- **Pending:** MemSpy is waiting for administrator authentication and daemon confirmation.
+- **Unavailable:** detection continues, but the daemon-provided reason explains why prevention cannot be enabled.
+
+Check support directly:
+
+```sh
+sudo memspyd --check-response
+cat /sys/kernel/security/lsm
+```
+
+The probe prints `Detection and response available` on a capable host. Otherwise it prints `Detection available; response unavailable: ...` and exits with status 3 without disabling detection. BPF LSM normally appears as `bpf` in `/sys/kernel/security/lsm`; MemSpy does not modify kernel boot parameters.
+
+Each non-comment line in `/etc/memspy/response-allowlist.conf` is an absolute executable path. An entry exempts that launcher from all `memfd` execution blocking, so add only a narrowly reviewed executable. Invalid or unsafe entries are omitted and reported as degraded health instead of silently broadening access. Restart `memspyd` after changes.
+
+Recovery commands:
+
+```sh
+sudo systemctl restart memspyd
+sudo journalctl -u memspyd -n 100 --no-pager
+sudo systemctl stop memspyd
+sudo /usr/libexec/memspy/cleanup-bpf
+```
+
+The cleanup helper disables response mode and removes only pins below `/sys/fs/bpf/memspy`; use it only while `memspyd` is stopped. `sudo ./uninstall.sh` preserves configuration and alert history. Add `--remove-data` only when that history and the saved response state should be deleted.
+
 ## Health states
 
 - **Healthy:** required probes are attached and persistent storage works.
 - **Degraded:** detection continues, but events were lost, correlation pressure occurred, enrichment was incomplete, or storage is temporarily unavailable.
 - **Failed/offline:** required probes did not attach, the host is unsupported, or the UI cannot reach the daemon.
+
+Response support is reported separately from detector health. A host can be healthy for detection while response mode is unavailable because BPF LSM is inactive.
 
 If storage becomes unavailable, the daemon preserves the database, continues with a bounded in-memory alert queue, and retries storage every 60 seconds.
 
@@ -177,14 +216,15 @@ The project does not collect:
 - packet or network content
 - remote telemetry
 
-The daemon is privileged because it loads eBPF programs and enriches events across users. The UI is deliberately separate and unprivileged. The systemd service restricts filesystem access, capabilities, namespaces, and networking while retaining the permissions required by libbpf.
+The daemon is privileged because it loads eBPF programs, owns the response policy, and enriches events across users. The UI is deliberately separate and unprivileged. Membership in `memspy-ui` does not authorize response changes; every enable and disable request is independently authorized by PolicyKit. The systemd service restricts filesystem access, capabilities, namespaces, and networking while retaining the permissions required by libbpf.
 
 ## Known limitations
 
 - Detection is best-effort for very short-lived processes because `/proc` enrichment can race with process exit.
 - Bounded kernel maps and queues can lose context under pressure; health changes to degraded rather than hiding the loss.
 - The initial rules intentionally favor precision over broad shell, encoded-command, or anonymous-memory heuristics.
-- This release provides detection and alerting only—no prevention or remediation.
+- Prevention is limited to `memfd` execution and requires an active BPF LSM; all other rules remain detection-only.
+- Blocking `memfd` execution can affect legitimate runtimes and launchers unless they are deliberately exempted.
 - ARM64, non-BTF kernels, non-systemd systems, and desktops other than GNOME/KDE Plasma are outside the current scope.
 
 ## Repository layout
@@ -203,7 +243,7 @@ docs/             man pages, design specification, and implementation plan
 
 ## Contributing
 
-Keep changes detection-only, local-first, bounded, and compatible with the supported Linux 5.4 baseline. New rules should include positive and negative tests, document likely legitimate triggers, and expose event loss or incomplete evidence through health instead of presenting uncertain results as healthy.
+Keep changes local-first, bounded, and compatible with the supported Linux 5.4 baseline. New rules should include positive and negative tests, document likely legitimate triggers, and expose event loss or incomplete evidence through health instead of presenting uncertain results as healthy. Prevention changes require explicit authorization, rollback, unsupported-host, and privileged-VM test paths.
 
 Before opening a pull request, run the non-privileged test suite. Changes to probes or detection policy should also pass `tests/vm/run_matrix.sh` in a disposable VM.
 

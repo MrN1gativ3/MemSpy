@@ -30,6 +30,16 @@ allowlist_test = executable(
 
 test('allowlist', allowlist_test)
 
+response_config_test = executable(
+  'test-response-config',
+  'unit/test_response_config.c',
+  '../src/daemon/response_config.c',
+  include_directories: [inc, daemon_inc, include_directories('../src/bpf')],
+  dependencies: [glib_dep],
+)
+
+test('response-config', response_config_test)
+
 store_test = executable(
   'test-store',
   'unit/test_store.c',
@@ -45,6 +55,7 @@ api_test = executable(
   'unit/test_api.c',
   '../src/common/alert_json.c',
   '../src/daemon/api.c',
+  '../src/daemon/authorizer.c',
   '../src/daemon/store.c',
   '../src/ui/client.c',
   include_directories: [inc, daemon_inc, include_directories('../src/ui')],
@@ -60,6 +71,27 @@ sensor_abi_test = executable(
 )
 
 test('sensor-abi', sensor_abi_test)
+
+enforce_abi_test = executable(
+  'test-enforce-abi',
+  'unit/test_enforce_abi.c',
+  include_directories: [inc, include_directories('../src/bpf')],
+  dependencies: [glib_dep],
+)
+
+test('enforce-abi', enforce_abi_test)
+
+enforcer_test = executable(
+  'test-enforcer',
+  'unit/test_enforcer.c',
+  '../src/daemon/enforcer.c',
+  enforce_bpf_skeleton,
+  include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],
+  dependencies: [glib_dep, libbpf_dep],
+  c_args: ['-Wno-overlength-strings'],
+)
+
+test('enforcer', enforcer_test)
 
 sensor_test = executable(
   'test-sensor',
@@ -83,8 +115,12 @@ daemon_test = executable(
   '../src/daemon/store.c',
   '../src/daemon/api.c',
   '../src/daemon/sensor.c',
+  '../src/daemon/enforcer.c',
+  '../src/daemon/response_config.c',
+  '../src/daemon/authorizer.c',
   '../src/common/alert_json.c',
   bpf_skeleton,
+  enforce_bpf_skeleton,
   include_directories: [inc, daemon_inc, include_directories('../src/bpf'), include_directories('..')],
   dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep],
   c_args: ['-Wno-overlength-strings'],

@@ -42,6 +42,33 @@ bpf_skeleton = custom_target(
   capture: true,
 )
 
+vmlinux_header = custom_target(
+  'vmlinux-header',
+  output: 'vmlinux.h',
+  command: [bpftool, 'btf', 'dump', 'file', '/sys/kernel/btf/vmlinux', 'format', 'c'],
+  capture: true,
+)
+
+enforce_bpf_object = custom_target(
+  'memspy-enforce-bpf',
+  input: ['src/bpf/memspy_enforce.bpf.c', vmlinux_header],
+  output: 'memspy_enforce.bpf.o',
+  command: [clang, '-g', '-O2', '-target', 'bpf', '-D__TARGET_ARCH_x86',
+            '-I' + meson.current_build_dir(),
+            '-I' + meson.current_source_dir() / 'src/bpf',
+            '-c', '@INPUT0@', '-o', '@OUTPUT@'],
+  install: true,
+  install_dir: get_option('libexecdir') / 'memspy',
+)
+
+enforce_bpf_skeleton = custom_target(
+  'memspy-enforce-bpf-skeleton',
+  input: enforce_bpf_object,
+  output: 'memspy_enforce.skel.h',
+  command: [bpftool, 'gen', 'skeleton', '@INPUT@'],
+  capture: true,
+)
+
 inc = include_directories('include')
 
 daemon_sources = [
@@ -53,6 +80,9 @@ daemon_sources = [
   'src/daemon/store.c',
   'src/daemon/api.c',
   'src/daemon/sensor.c',
+  'src/daemon/enforcer.c',
+  'src/daemon/response_config.c',
+  'src/daemon/authorizer.c',
   'src/common/alert_json.c',
 ]
 
@@ -60,6 +90,7 @@ memspyd = executable(
   'memspyd',
   daemon_sources,
   bpf_skeleton,
+  enforce_bpf_skeleton,
   include_directories: [inc, include_directories('src/daemon'), include_directories('src/bpf'), include_directories('.')],
   dependencies: [glib_dep, gio_dep, json_c_dep, sqlite_dep, libbpf_dep],
   c_args: ['-Wno-overlength-strings'],
@@ -84,10 +115,16 @@ memspy_ui = executable(
 )
 
 install_data('config/allowlist.conf', install_dir: get_option('sysconfdir') / 'memspy')
+install_data('config/response-allowlist.conf',
+             install_dir: get_option('sysconfdir') / 'memspy')
 install_data('packaging/common/migrate-legacy.sh',
              install_dir: get_option('libexecdir') / 'memspy',
              install_mode: 'rwxr-xr-x',
              rename: 'migrate-legacy')
+install_data('packaging/common/cleanup-bpf.sh',
+             install_dir: get_option('libexecdir') / 'memspy',
+             install_mode: 'rwxr-xr-x',
+             rename: 'cleanup-bpf')
 install_data('data/memspy-ui.css', install_dir: get_option('datadir') / 'memspy')
 install_data('packaging/common/memspyd.service',
              install_dir: get_option('prefix') / 'lib/systemd/system')
@@ -97,6 +134,8 @@ install_data('packaging/common/memspyd.tmpfiles',
 install_data('packaging/common/memspyd.sysusers',
              install_dir: get_option('prefix') / 'lib/sysusers.d',
              rename: 'memspyd.conf')
+install_data('packaging/common/org.memspy.response.policy',
+             install_dir: get_option('datadir') / 'polkit-1/actions')
 install_data('packaging/common/org.memspy.MemSpyUI.desktop',
              install_dir: get_option('datadir') / 'applications')
 install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',

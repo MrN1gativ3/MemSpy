@@ -28,6 +28,7 @@ static void
 fill_common_alert(const struct ms_observation *observation, struct ms_alert *alert)
 {
     *alert = (struct ms_alert){
+        .action = MS_ALERT_DETECTED,
         .timestamp_utc = observation->timestamp_utc,
         .observed_boottime_ns = observation->observed_boottime_ns,
         .pid = observation->process.pid,
@@ -35,10 +36,13 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
         .uid = observation->uid,
         .target_pid = observation->target.pid,
         .enrichment_incomplete = observation->enrichment_incomplete,
+        .arguments_truncated = observation->arguments_truncated,
     };
     copy_string(alert->comm, sizeof alert->comm, observation->comm);
+    copy_string(alert->username, sizeof alert->username, observation->username);
     copy_string(alert->exe, sizeof alert->exe, observation->exe);
     copy_string(alert->cmdline, sizeof alert->cmdline, observation->cmdline);
+    copy_string(alert->parent_exe, sizeof alert->parent_exe, observation->parent_exe);
     copy_string(alert->target_exe, sizeof alert->target_exe, observation->target_exe);
 }
 

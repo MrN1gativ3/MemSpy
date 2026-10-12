@@ -18,14 +18,16 @@ BuildRequires:  pkgconfig(sqlite3)
 BuildRequires:  pkgconfig(gtk+-3.0)
 BuildRequires:  pkgconfig(ayatana-appindicator3-0.1)
 BuildRequires:  pkgconfig(libnotify)
-Requires:       systemd
+BuildRequires:  pkgconfig(polkit-gobject-1)
+Requires:       systemd polkit
 Conflicts:      filelessd
 Obsoletes:      filelessd < 0.1.0-2
 Suggests:       gnome-shell-extension-appindicator
 
 %description
-A detection-only eBPF daemon and unprivileged desktop alert indicator for
-high-confidence fileless execution and injection behavior.
+An eBPF daemon and unprivileged desktop alert indicator for high-confidence
+fileless execution and injection behavior. Optional response mode blocks memfd
+execution on supported hosts.
 
 %prep
 %autosetup
@@ -47,20 +49,27 @@ systemd-tmpfiles --create %{_tmpfilesdir}/memspyd.conf || :
 
 %preun
 %systemd_preun memspyd.service
+if [ "$1" -eq 0 ]; then
+  /usr/libexec/memspy/cleanup-bpf
+fi
 
 %postun
 %systemd_postun_with_restart memspyd.service
 
 %files
 %config(noreplace) %{_sysconfdir}/memspy/allowlist.conf
+%config(noreplace) %{_sysconfdir}/memspy/response-allowlist.conf
 %{_bindir}/memspyd
 %{_bindir}/memspy-ui
 %{_libexecdir}/memspy/memspy.bpf.o
+%{_libexecdir}/memspy/memspy_enforce.bpf.o
 %{_libexecdir}/memspy/migrate-legacy
+%{_libexecdir}/memspy/cleanup-bpf
 %{_unitdir}/memspyd.service
 %{_tmpfilesdir}/memspyd.conf
 %{_sysusersdir}/memspyd.conf
 %{_datadir}/applications/org.memspy.MemSpyUI.desktop
+%{_datadir}/polkit-1/actions/org.memspy.response.policy
 %{_sysconfdir}/xdg/autostart/org.memspy.MemSpyUI.desktop
 %{_datadir}/memspy/memspy-ui.css
 %{_datadir}/icons/hicolor/scalable/status/memspy-*-symbolic.svg

@@ -13,6 +13,10 @@ help=$("$installer" --help)
 printf '%s\n' "$help" | grep -q '^Usage: sudo ./install.sh'
 printf '%s\n' "$help" | grep -q 'Ubuntu, Debian, Fedora, and Arch Linux'
 test "$("$legacy_installer" --help)" = "$help"
+grep -q 'libpolkit-gobject-1-dev' "$installer"
+grep -q 'polkit-devel' "$installer"
+grep -q '"$build_dir/memspyd" --check-response' "$installer"
+grep -q 'response-allowlist.conf' "$installer"
 
 if [ "$(id -u)" -ne 0 ]; then
     error_file=$(mktemp)

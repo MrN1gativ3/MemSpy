@@ -35,6 +35,7 @@ components:
   alert-row: {}
   severity-filter: {}
   status-banner: {}
+  response-control: {}
   indicator-menu: {}
 ---
 
@@ -58,7 +59,7 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 - **Anti-references:** No SOC wallboard, neon terminal, card-grid SaaS dashboard, charts, gradients, glass effects, or red-dominant background. Those styles exaggerate activity and obscure local health.
 - **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
 
-The canonical capability owners are GTK native controls for buttons, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface; and `src/ui/indicator.c` for the panel menu. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
+The canonical capability owners are GTK native controls for buttons, switches, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface and response presentation; and `src/ui/indicator.c` for the panel menu. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
 
 ## Colors
 
@@ -70,7 +71,7 @@ The interface inherits the desktop's Cantarell/system sans stack. Rule IDs, PIDs
 
 ## Layout
 
-The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner and filter row sit above one vertically scrolling alert list. Loading, empty, disconnected, degraded, and error states occupy the same list region to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
+The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner contains detector health plus a compact response-mode row; the filter row and one vertically scrolling alert list follow it. Loading, empty, disconnected, degraded, pending, and error states reserve the same control regions to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
 
 ## Elevation & Depth
 
@@ -88,15 +89,15 @@ GTK owns hover, focus-visible, active, disabled, and high-contrast behavior. Loa
 
 ### Buttons and actions
 
-Filters are GTK toggle/radio-style buttons labeled All, High, and Medium with visible counts. The panel menu uses explicit actions: Open alerts and Quit UI. Icon-only shell presentation retains accessible names in the application. Button dimensions remain stable while reconnecting.
+Filters are GTK toggle/radio-style buttons labeled All, High, and Medium with visible counts. Response mode uses one labelled native GTK switch in the health banner. It shows explicit Off, On, Pending, or Unavailable text; stays disabled during administrator authentication; and changes visually only from daemon-confirmed health. Authentication failure restores the last confirmed position and leaves a specific inline explanation. The panel menu uses explicit actions: Open alerts and Quit UI. Icon-only shell presentation retains accessible names in the application. Control dimensions remain stable while reconnecting or authenticating.
 
 ### Navigation and data display
 
-There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, process, executable, and a keyboard-operable evidence disclosure with labeled fields. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
+There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, process, executable, and a text outcome badge (`Blocked` or `Detected`) before a keyboard-operable `Process details` disclosure. Details group only meaningful selectable fields under Identity, Execution, optional Target, and Detection headings. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
 
 ### Forms and overlays
 
-There are no product forms or destructive dialogs. Persistent connection and health failures use the status banner; transient high-severity alerts use native desktop notifications. Essential recovery information never exists only in a notification.
+There are no product forms or destructive dialogs. The native PolicyKit agent owns the administrator-password prompt; MemSpy never renders or handles credentials. Response changes are pessimistic: the switch enters a disabled Pending state and commits only after daemon confirmation. Persistent connection and health failures use the status banner; transient high-severity alerts use native desktop notifications. Essential recovery information never exists only in a notification.
 
 ### Iconography
 
@@ -108,7 +109,7 @@ Use only native GTK disclosure and spinner behavior. New live alerts may appear 
 
 ### Content and data visualization
 
-Copy is direct and operational: “Monitoring active,” “Monitoring degraded,” “Detector unavailable,” and “No alerts in the last 30 days.” Show rule IDs and evidence faithfully, but never raw daemon errors, payload memory, environment variables, or file contents. There are no charts.
+Copy is direct and operational: “Monitoring active,” “Monitoring degraded,” “Detector unavailable,” “Off — Detection only,” and “On — Blocking memfd execution.” Show rule IDs and bounded process evidence faithfully, but never raw daemon errors, payload memory, environment variables, or file contents. There are no charts.
 
 ## Do's and Don'ts
 

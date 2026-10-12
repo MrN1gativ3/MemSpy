@@ -74,7 +74,7 @@ test_store_schema_permissions_and_wal(struct store_fixture *fixture, gconstpoint
     g_assert_cmpint(sqlite3_open_v2(fixture->path, &database, SQLITE_OPEN_READONLY, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &statement, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_step(statement), ==, SQLITE_ROW);
-    g_assert_cmpint(sqlite3_column_int(statement, 0), ==, 1);
+    g_assert_cmpint(sqlite3_column_int(statement, 0), ==, 2);
     sqlite3_finalize(statement);
     g_assert_cmpint(sqlite3_prepare_v2(database, "PRAGMA journal_mode", -1, &statement, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_step(statement), ==, SQLITE_ROW);
@@ -94,6 +94,11 @@ test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixtur
     struct ms_alert_page page = {0};
 
     (void)user_data;
+    second.action = MS_ALERT_BLOCKED;
+    second.arguments_truncated = true;
+    g_strlcpy(second.username, "alice", sizeof second.username);
+    g_strlcpy(second.launcher_exe, "/usr/bin/launcher", sizeof second.launcher_exe);
+    g_strlcpy(second.parent_exe, "/usr/bin/parent", sizeof second.parent_exe);
     g_assert_true(ms_store_insert(fixture->store, &first, &error));
     g_assert_true(ms_store_insert(fixture->store, &second, &error));
     g_assert_true(ms_store_insert(fixture->store, &third, &error));
@@ -103,6 +108,11 @@ test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixtur
     g_assert_cmpuint(page.length, ==, 2);
     g_assert_cmpint(page.items[0].id, ==, third.id);
     g_assert_cmpint(page.items[1].id, ==, second.id);
+    g_assert_cmpint(page.items[1].action, ==, MS_ALERT_BLOCKED);
+    g_assert_cmpstr(page.items[1].username, ==, "alice");
+    g_assert_cmpstr(page.items[1].launcher_exe, ==, "/usr/bin/launcher");
+    g_assert_cmpstr(page.items[1].parent_exe, ==, "/usr/bin/parent");
+    g_assert_true(page.items[1].arguments_truncated);
     int64_t cursor = page.next_before_id;
     ms_alert_page_clear(&page);
 
@@ -115,6 +125,47 @@ test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixtur
     g_assert_cmpuint(page.length, ==, 1);
     g_assert_cmpstr(page.items[0].rule_id, ==, "MEMFD_EXEC");
     ms_alert_page_clear(&page);
+}
+
+static void
+test_store_migrates_version_one(void)
+{
+    static const char schema[] =
+        "CREATE TABLE alerts ("
+        "id INTEGER PRIMARY KEY AUTOINCREMENT,"
+        "timestamp_utc INTEGER NOT NULL,observed_boottime_ns INTEGER NOT NULL,"
+        "severity INTEGER NOT NULL CHECK(severity IN (1,2)),"
+        "rule_id TEXT NOT NULL,explanation TEXT NOT NULL,"
+        "pid INTEGER NOT NULL,ppid INTEGER NOT NULL,uid INTEGER NOT NULL,"
+        "comm TEXT NOT NULL,exe TEXT NOT NULL,cmdline TEXT NOT NULL,"
+        "target_pid INTEGER NOT NULL,target_exe TEXT NOT NULL,"
+        "evidence TEXT NOT NULL,enrichment_incomplete INTEGER NOT NULL CHECK(enrichment_incomplete IN (0,1)));"
+        "INSERT INTO alerts VALUES(1,100,1000,2,'MEMFD_EXEC','existing',42,7,1000,"
+        "'fixture','/memfd:fixture (deleted)','fixture --old',0,'','memfd',0);"
+        "PRAGMA user_version=1;";
+    g_autofree char *directory = g_dir_make_tmp("memspy-migrate-XXXXXX", NULL);
+    g_autofree char *path = g_build_filename(directory, "alerts.db", NULL);
+    sqlite3 *database = NULL;
+    struct ms_store *store = NULL;
+    struct ms_alert_page page = {0};
+    struct ms_error error = {0};
+
+    g_assert_cmpint(sqlite3_open(path, &database), ==, SQLITE_OK);
+    g_assert_cmpint(sqlite3_exec(database, schema, NULL, NULL, NULL), ==, SQLITE_OK);
+    sqlite3_close(database);
+    g_assert_true(ms_store_open(path, &store, &error));
+    g_assert_true(ms_store_list(store, 0, MS_SEVERITY_MEDIUM, 10, &page, &error));
+    g_assert_cmpuint(page.length, ==, 1);
+    g_assert_cmpstr(page.items[0].rule_id, ==, "MEMFD_EXEC");
+    g_assert_cmpint(page.items[0].action, ==, MS_ALERT_DETECTED);
+    g_assert_cmpstr(page.items[0].username, ==, "");
+    g_assert_cmpstr(page.items[0].launcher_exe, ==, "");
+    g_assert_cmpstr(page.items[0].parent_exe, ==, "");
+    g_assert_false(page.items[0].arguments_truncated);
+    ms_alert_page_clear(&page);
+    ms_store_close(store);
+    g_unlink(path);
+    g_rmdir(directory);
 }
 
 static void
@@ -161,5 +212,6 @@ main(int argc, char **argv)
     g_test_add("/store/prune-limit", struct store_fixture, NULL, fixture_setup,
                test_store_prunes_at_most_one_hundred, fixture_teardown);
     g_test_add_func("/store/corrupt-preserved", test_store_preserves_corrupt_database);
+    g_test_add_func("/store/migrate-v1", test_store_migrates_version_one);
     return g_test_run();
 }

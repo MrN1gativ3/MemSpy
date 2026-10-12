@@ -117,7 +117,7 @@ ms_client_connect_fd(int connected_fd, struct ms_client **out, struct ms_error *
         return false;
     }
     client->descriptor = connected_fd;
-    if (!write_line(client->descriptor, "{\"v\":1,\"op\":\"hello\"}")) {
+    if (!write_line(client->descriptor, "{\"v\":2,\"op\":\"hello\"}")) {
         set_error(error, "connect_failed", "%s", strerror(errno));
         ms_client_close(client);
         return false;
@@ -159,7 +159,7 @@ ms_client_get_status(struct ms_client *client, struct ms_health *health, struct 
 {
     json_object *reply;
     json_object *object;
-    if (!write_line(client->descriptor, "{\"v\":1,\"op\":\"status\"}"))
+    if (!write_line(client->descriptor, "{\"v\":2,\"op\":\"status\"}"))
         return false;
     reply = read_reply(client->descriptor, error);
     if (reply == NULL || !reply_ok(reply, error) ||
@@ -195,12 +195,30 @@ decode_health(json_object *object, struct ms_health *health)
     HEALTH_VALUE("lost_events", lost_events);
     HEALTH_VALUE("map_pressure", map_pressure);
     HEALTH_VALUE("dropped_alerts", dropped_alerts);
+    HEALTH_VALUE("blocked_execs", blocked_execs);
+    HEALTH_VALUE("lost_block_events", lost_block_events);
     if (!json_object_object_get_ex(object, "protected", &field) ||
         json_object_get_type(field) != json_type_boolean) return false;
     health->protected = json_object_get_boolean(field);
     if (!json_object_object_get_ex(object, "storage_available", &field) ||
         json_object_get_type(field) != json_type_boolean) return false;
     health->storage_available = json_object_get_boolean(field);
+    if (!json_object_object_get_ex(object, "response_supported", &field) ||
+        json_object_get_type(field) != json_type_boolean) return false;
+    health->response_supported = json_object_get_boolean(field);
+    if (!json_object_object_get_ex(object, "response_requested", &field) ||
+        json_object_get_type(field) != json_type_boolean) return false;
+    health->response_requested = json_object_get_boolean(field);
+    if (!json_object_object_get_ex(object, "response_active", &field) ||
+        json_object_get_type(field) != json_type_boolean) return false;
+    health->response_active = json_object_get_boolean(field);
+    if (!json_object_object_get_ex(object, "response_reason", &field) ||
+        json_object_get_type(field) != json_type_string ||
+        json_object_get_string_len(field) >= (int)sizeof health->response_reason ||
+        !g_utf8_validate(json_object_get_string(field), json_object_get_string_len(field), NULL))
+        return false;
+    g_strlcpy(health->response_reason, json_object_get_string(field),
+              sizeof health->response_reason);
     if (!json_object_object_get_ex(object, "message", &field) ||
         json_object_get_type(field) != json_type_string ||
         json_object_get_string_len(field) >= (int)sizeof health->message ||
@@ -208,6 +226,37 @@ decode_health(json_object *object, struct ms_health *health)
         return false;
     g_strlcpy(health->message, json_object_get_string(field), sizeof health->message);
 #undef HEALTH_VALUE
+    return true;
+}
+
+bool
+ms_client_set_response(struct ms_client *client, bool enabled,
+                       struct ms_health *confirmed, struct ms_error *error)
+{
+    const char *request = enabled ?
+        "{\"v\":2,\"op\":\"set_response\",\"enabled\":true}" :
+        "{\"v\":2,\"op\":\"set_response\",\"enabled\":false}";
+    json_object *reply;
+    json_object *health;
+
+    if (client == NULL || confirmed == NULL || !write_line(client->descriptor, request))
+        return false;
+    reply = read_reply(client->descriptor, error);
+    if (reply == NULL)
+        return false;
+    if (!reply_ok(reply, error)) {
+        json_object_put(reply);
+        return false;
+    }
+    if (!json_object_object_get_ex(reply, "health", &health) ||
+        !decode_health(health, confirmed)) {
+        set_error(error, "malformed_reply", "daemon returned invalid confirmed health data");
+        json_object_put(reply);
+        return false;
+    }
+    json_object_put(reply);
+    if (error != NULL)
+        *error = (struct ms_error){0};
     return true;
 }
 
@@ -263,7 +312,7 @@ ms_client_list_alerts(struct ms_client *client, int64_t before_id, enum ms_sever
     size_t length;
 
     snprintf(request, sizeof request,
-             "{\"v\":1,\"op\":\"alerts\",\"before_id\":%lld,\"minimum\":%d,\"limit\":%zu}",
+             "{\"v\":2,\"op\":\"alerts\",\"before_id\":%lld,\"minimum\":%d,\"limit\":%zu}",
              (long long)before_id, minimum, limit);
     if (!write_line(client->descriptor, request))
         return false;
@@ -310,7 +359,7 @@ ms_client_subscribe(struct ms_client *client,
 {
     json_object *reply;
     if (client == NULL || client->subscription_thread != NULL ||
-        !write_line(client->descriptor, "{\"v\":1,\"op\":\"subscribe\"}"))
+        !write_line(client->descriptor, "{\"v\":2,\"op\":\"subscribe\"}"))
         return false;
     reply = read_reply(client->descriptor, error);
     if (reply == NULL || !reply_ok(reply, error)) {

@@ -7,7 +7,10 @@
 
 #include "allowlist.h"
 #include "api.h"
+#include "authorizer.h"
+#include "enforcer.h"
 #include "policy.h"
+#include "response_config.h"
 #include "sensor.h"
 #include "store.h"
 
@@ -17,7 +20,10 @@ struct ms_app {
     struct ms_store *store;
     struct ms_api *api;
     struct ms_sensor *sensor;
+    struct ms_enforcer *enforcer;
+    struct ms_authorizer *authorizer;
     char *database_path;
+    char *response_state_path;
     struct ms_app_dependencies dependencies;
     struct ms_health health;
     struct ms_alert *queue;
@@ -28,6 +34,8 @@ struct ms_app {
     int64_t next_prune_utc;
     volatile sig_atomic_t stopping;
     bool injected;
+    bool response_configured;
+    GMutex response_lock;
 };
 
 static void
@@ -45,6 +53,72 @@ store_insert(struct ms_app *app, struct ms_alert *alert, struct ms_error *error)
     if (app->injected)
         return app->dependencies.store_insert(app->dependencies.userdata, alert, error);
     return ms_store_insert(app->store, alert, error);
+}
+
+static bool
+response_state_load(struct ms_app *app, const char *path, bool *enabled,
+                    struct ms_error *error)
+{
+    if (app->injected)
+        return app->dependencies.response_state_load(app->dependencies.userdata, path,
+                                                     enabled, error);
+    return ms_response_state_load(path, enabled, error);
+}
+
+static bool
+response_state_store(struct ms_app *app, bool enabled, struct ms_error *error)
+{
+    if (app->injected)
+        return app->dependencies.response_state_store(app->dependencies.userdata,
+                                                      app->response_state_path,
+                                                      enabled, error);
+    return ms_response_state_store(app->response_state_path, enabled, error);
+}
+
+static bool
+response_allowlist_load(struct ms_app *app, const char *path, GArray **keys,
+                        size_t *rejected, struct ms_error *warning)
+{
+    if (app->injected)
+        return app->dependencies.response_allowlist_load(app->dependencies.userdata,
+                                                         path, keys, rejected, warning);
+    return ms_response_allowlist_load(path, keys, rejected, warning);
+}
+
+static bool
+response_attach(struct ms_app *app, const GArray *keys, bool requested,
+                struct ms_enforcer_status *status, struct ms_error *error)
+{
+    if (app->injected)
+        return app->dependencies.response_attach(app->dependencies.userdata, keys,
+                                                 requested, status, error);
+    if (!ms_enforcer_attach(app->enforcer, keys, requested, error))
+        return false;
+    ms_enforcer_status(app->enforcer, status);
+    return true;
+}
+
+static bool
+response_set_enabled(struct ms_app *app, bool enabled, struct ms_error *error)
+{
+    if (app->injected)
+        return app->dependencies.response_set_enabled(app->dependencies.userdata,
+                                                      enabled, error);
+    return ms_enforcer_set_enabled(app->enforcer, enabled, error);
+}
+
+static int
+response_poll(struct ms_app *app, int timeout_ms, struct ms_enforcer_status *status,
+              struct ms_error *error)
+{
+    int result;
+
+    if (app->injected)
+        return app->dependencies.response_poll(app->dependencies.userdata, timeout_ms,
+                                               status, error);
+    result = ms_enforcer_poll(app->enforcer, timeout_ms, error);
+    ms_enforcer_status(app->enforcer, status);
+    return result;
 }
 
 static size_t
@@ -97,6 +171,24 @@ queue_push(struct ms_app *app, const struct ms_alert *alert)
     return true;
 }
 
+static void drain_queue(struct ms_app *app);
+
+static void
+accept_alert(struct ms_app *app, const struct ms_alert *alert)
+{
+    struct ms_alert stored = *alert;
+    struct ms_error error = {0};
+
+    if (app->queue_length > 0) {
+        queue_push(app, &stored);
+        drain_queue(app);
+    } else if (!store_insert(app, &stored, &error)) {
+        apply_health(app, MS_HEALTH_STORE_FAILED, 1);
+        queue_push(app, &stored);
+    }
+    publish_alert(app, &stored);
+}
+
 static void
 drain_queue(struct ms_app *app)
 {
@@ -135,14 +227,71 @@ ms_app_observe(struct ms_app *app, const struct ms_observation *observation)
     if (ms_allowlist_matches(app->allowlist, alert.rule_id, alert.exe))
         return;
 
-    if (app->queue_length > 0) {
-        queue_push(app, &alert);
-        drain_queue(app);
-    } else if (!store_insert(app, &alert, &error)) {
-        apply_health(app, MS_HEALTH_STORE_FAILED, 1);
-        queue_push(app, &alert);
+    (void)error;
+    accept_alert(app, &alert);
+}
+
+void
+ms_app_blocked(struct ms_app *app, const struct ms_alert *alert)
+{
+    if (app != NULL && alert != NULL && !app->stopping)
+        accept_alert(app, alert);
+}
+
+static void
+blocked_alert(const struct ms_alert *alert, void *userdata)
+{
+    ms_app_blocked(userdata, alert);
+}
+
+static void
+degrade_response(struct ms_app *app, const char *reason)
+{
+    if (app->health.state != MS_HEALTH_FAILED)
+        app->health.state = MS_HEALTH_DEGRADED;
+    g_strlcpy(app->health.response_reason, reason, sizeof app->health.response_reason);
+}
+
+static void
+initialize_response(struct ms_app *app, const struct ms_app_config *config)
+{
+    g_autoptr(GArray) keys = NULL;
+    struct ms_enforcer_status status = {0};
+    struct ms_error state_error = {0};
+    struct ms_error allowlist_warning = {0};
+    struct ms_error operation_error = {0};
+    bool requested = false;
+    size_t rejected = 0;
+
+    app->response_state_path = g_strdup(config->response_state_path);
+    if (!response_state_load(app, config->response_state_path, &requested, &state_error)) {
+        requested = false;
+        degrade_response(app, state_error.message);
     }
-    publish_alert(app, &alert);
+    if (!response_allowlist_load(app, config->response_allowlist_path, &keys, &rejected,
+                                 &allowlist_warning)) {
+        keys = g_array_new(false, false, sizeof(struct ms_launcher_key));
+        degrade_response(app, allowlist_warning.message);
+    } else if (rejected > 0) {
+        degrade_response(app, allowlist_warning.message);
+    }
+    if (!app->injected &&
+        !ms_enforcer_open(&app->enforcer, config->response_pin_dir, blocked_alert, app,
+                          &operation_error)) {
+        status.supported = false;
+        g_strlcpy(status.reason, operation_error.message, sizeof status.reason);
+    } else if (!response_attach(app, keys, requested, &status, &operation_error)) {
+        status.supported = false;
+        g_strlcpy(status.reason, operation_error.message, sizeof status.reason);
+    }
+    app->health.response_requested = requested;
+    app->health.response_supported = status.supported;
+    app->health.response_active = status.supported && status.enabled;
+    app->health.blocked_execs = status.denied;
+    app->health.lost_block_events = status.lost_events;
+    if (app->health.response_reason[0] == '\0')
+        g_strlcpy(app->health.response_reason, status.reason,
+                  sizeof app->health.response_reason);
 }
 
 void
@@ -151,6 +300,27 @@ ms_app_maintain(struct ms_app *app, int64_t now_utc)
     struct ms_error error = {0};
     if (app == NULL)
         return;
+    if (app->response_configured) {
+        struct ms_enforcer_status status = {0};
+
+        g_mutex_lock(&app->response_lock);
+        if (response_poll(app, 0, &status, &error) >= 0) {
+            bool changed = app->health.response_supported != status.supported ||
+                           app->health.response_active != status.enabled ||
+                           app->health.blocked_execs != status.denied ||
+                           app->health.lost_block_events != status.lost_events;
+            app->health.response_supported = status.supported;
+            app->health.response_active = status.supported && status.enabled;
+            app->health.blocked_execs = status.denied;
+            app->health.lost_block_events = status.lost_events;
+            if (status.reason[0] != '\0')
+                g_strlcpy(app->health.response_reason, status.reason,
+                          sizeof app->health.response_reason);
+            if (changed)
+                publish_health(app);
+        }
+        g_mutex_unlock(&app->response_lock);
+    }
     drain_queue(app);
     if (now_utc >= app->next_prune_utc) {
         if (!app->injected && app->store == NULL) {
@@ -188,6 +358,22 @@ peer_connected(pid_t pid, uid_t uid, void *userdata)
     g_message("local API client connected: pid=%ld uid=%ld", (long)pid, (long)uid);
 }
 
+static bool
+authorize_response_request(const struct ms_peer_identity *peer, void *userdata,
+                           struct ms_error *error)
+{
+    struct ms_app *app = userdata;
+    return ms_authorizer_check(app->authorizer, peer, error);
+}
+
+static bool
+set_response_request(const struct ms_peer_identity *peer, bool enabled, void *userdata,
+                     struct ms_error *error)
+{
+    (void)peer;
+    return ms_app_set_response(userdata, enabled, error);
+}
+
 struct ms_app *
 ms_app_new(const struct ms_app_config *config,
            const struct ms_app_dependencies *dependencies,
@@ -195,7 +381,9 @@ ms_app_new(const struct ms_app_config *config,
 {
     struct ms_app *app;
     struct ms_error store_error = {0};
-    const struct ms_api_callbacks api_callbacks = {.peer_connected = peer_connected};
+    struct ms_api_callbacks api_callbacks = {0};
+
+    bool response_configured;
 
     if (config == NULL || config->allowlist_path == NULL) {
         set_error(error, "config", "an allowlist path is required");
@@ -206,27 +394,51 @@ ms_app_new(const struct ms_app_config *config,
         set_error(error, "dependencies", "injected storage and alert publishing are required");
         return NULL;
     }
+    response_configured = config->response_state_path != NULL ||
+                          config->response_allowlist_path != NULL ||
+                          config->response_pin_dir != NULL;
+    if (response_configured && (config->response_state_path == NULL ||
+        config->response_allowlist_path == NULL || config->response_pin_dir == NULL)) {
+        set_error(error, "config", "all response paths are required together");
+        return NULL;
+    }
+    if (response_configured && dependencies != NULL &&
+        (dependencies->response_state_load == NULL ||
+         dependencies->response_state_store == NULL ||
+         dependencies->response_allowlist_load == NULL ||
+         dependencies->response_attach == NULL ||
+         dependencies->response_set_enabled == NULL ||
+         dependencies->response_poll == NULL)) {
+        set_error(error, "dependencies", "injected response operations are required");
+        return NULL;
+    }
     if (dependencies == NULL && (config->database_path == NULL || config->socket_path == NULL)) {
         set_error(error, "config", "database and socket paths are required");
         return NULL;
     }
     app = g_new0(struct ms_app, 1);
+    g_mutex_init(&app->response_lock);
     app->queue = g_new0(struct ms_alert, MS_APP_QUEUE_CAPACITY);
     app->policy = ms_policy_new();
     app->health = (struct ms_health){
         .state = MS_HEALTH_DEGRADED,
         .storage_available = true,
     };
-    if (app->policy == NULL ||
-        !ms_allowlist_load(config->allowlist_path, &app->allowlist, error)) {
-        ms_app_free(app);
-        return NULL;
-    }
+    app->response_configured = response_configured;
     if (dependencies != NULL) {
         app->dependencies = *dependencies;
         app->injected = true;
         app->health.state = MS_HEALTH_HEALTHY;
         app->health.protected = true;
+    }
+    if (app->policy == NULL ||
+        !ms_allowlist_load(config->allowlist_path, &app->allowlist, error)) {
+        ms_app_free(app);
+        return NULL;
+    }
+    if (response_configured)
+        initialize_response(app, config);
+    if (dependencies != NULL) {
         return app;
     }
     app->database_path = g_strdup(config->database_path);
@@ -238,6 +450,13 @@ ms_app_new(const struct ms_app_config *config,
         ms_app_free(app);
         return NULL;
     }
+    app->authorizer = ms_authorizer_new();
+    api_callbacks = (struct ms_api_callbacks){
+        .peer_connected = peer_connected,
+        .authorize_response = authorize_response_request,
+        .set_response = set_response_request,
+        .userdata = app,
+    };
     app->api = ms_api_new(config->socket_path, app->store, &api_callbacks);
     if (app->api == NULL) {
         set_error(error, "socket", "cannot initialize local API");
@@ -247,6 +466,40 @@ ms_app_new(const struct ms_app_config *config,
     if (error != NULL)
         *error = (struct ms_error){0};
     return app;
+}
+
+bool
+ms_app_set_response(struct ms_app *app, bool enabled, struct ms_error *error)
+{
+    bool previous;
+    struct ms_error rollback_error = {0};
+
+    if (app == NULL || !app->response_configured || !app->health.response_supported) {
+        set_error(error, "response_unavailable", "response mode is unavailable");
+        return false;
+    }
+    g_mutex_lock(&app->response_lock);
+    previous = app->health.response_active;
+    if (!response_set_enabled(app, enabled, error)) {
+        g_mutex_unlock(&app->response_lock);
+        return false;
+    }
+    if (!response_state_store(app, enabled, error)) {
+        if (!response_set_enabled(app, previous, &rollback_error))
+            degrade_response(app, "response state rollback failed");
+        app->health.response_active = previous;
+        publish_health(app);
+        g_mutex_unlock(&app->response_lock);
+        return false;
+    }
+    app->health.response_requested = enabled;
+    app->health.response_active = enabled;
+    app->health.response_reason[0] = '\0';
+    publish_health(app);
+    g_mutex_unlock(&app->response_lock);
+    if (error != NULL)
+        *error = (struct ms_error){0};
+    return true;
 }
 
 int
@@ -303,11 +556,15 @@ ms_app_free(struct ms_app *app)
     if (app == NULL)
         return;
     ms_api_free(app->api);
+    ms_authorizer_free(app->authorizer);
+    ms_enforcer_free(app->enforcer);
     ms_sensor_free(app->sensor);
     ms_store_close(app->store);
     ms_allowlist_free(app->allowlist);
     ms_policy_free(app->policy);
     g_free(app->queue);
     g_free(app->database_path);
+    g_free(app->response_state_path);
+    g_mutex_clear(&app->response_lock);
     g_free(app);
 }

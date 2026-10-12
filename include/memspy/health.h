@@ -17,6 +17,12 @@ struct ms_health {
     uint64_t map_pressure;
     uint64_t dropped_alerts;
     bool storage_available;
+    bool response_supported;
+    bool response_requested;
+    bool response_active;
+    uint64_t blocked_execs;
+    uint64_t lost_block_events;
+    char response_reason[256];
     char message[256];
 };
 

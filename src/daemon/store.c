@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MS_STORE_SCHEMA_VERSION 1
+#define MS_STORE_SCHEMA_VERSION 2
 #define MS_STORE_MAX_PAGE 200U
 #define MS_STORE_MAX_PRUNE_BATCH 100U
 
@@ -81,11 +81,24 @@ migrate(sqlite3 *database, struct ms_error *error)
         "pid INTEGER NOT NULL, ppid INTEGER NOT NULL, uid INTEGER NOT NULL,"
         "comm TEXT NOT NULL, exe TEXT NOT NULL, cmdline TEXT NOT NULL,"
         "target_pid INTEGER NOT NULL, target_exe TEXT NOT NULL,"
-        "evidence TEXT NOT NULL, enrichment_incomplete INTEGER NOT NULL CHECK(enrichment_incomplete IN (0,1))"
+        "evidence TEXT NOT NULL, enrichment_incomplete INTEGER NOT NULL CHECK(enrichment_incomplete IN (0,1)),"
+        "action INTEGER NOT NULL DEFAULT 0 CHECK(action IN (0,1)),"
+        "username TEXT NOT NULL DEFAULT '', launcher_exe TEXT NOT NULL DEFAULT '',"
+        "parent_exe TEXT NOT NULL DEFAULT '',"
+        "arguments_truncated INTEGER NOT NULL DEFAULT 0 CHECK(arguments_truncated IN (0,1))"
         ");"
         "CREATE INDEX alerts_timestamp_idx ON alerts(timestamp_utc);"
         "CREATE INDEX alerts_severity_id_idx ON alerts(severity,id);"
-        "PRAGMA user_version=1;"
+        "PRAGMA user_version=2;"
+        "COMMIT;";
+    static const char migrate_v1[] =
+        "BEGIN IMMEDIATE;"
+        "ALTER TABLE alerts ADD COLUMN action INTEGER NOT NULL DEFAULT 0 CHECK(action IN (0,1));"
+        "ALTER TABLE alerts ADD COLUMN username TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN launcher_exe TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN parent_exe TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN arguments_truncated INTEGER NOT NULL DEFAULT 0 CHECK(arguments_truncated IN (0,1));"
+        "PRAGMA user_version=2;"
         "COMMIT;";
     int version;
 
@@ -93,6 +106,13 @@ migrate(sqlite3 *database, struct ms_error *error)
         return false;
     if (version == MS_STORE_SCHEMA_VERSION)
         return true;
+    if (version == 1) {
+        if (!execute(database, migrate_v1, error)) {
+            sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
+            return false;
+        }
+        return true;
+    }
     if (version != 0) {
         set_error(error, "store_schema", "unsupported schema version %d", version);
         return false;
@@ -182,15 +202,20 @@ bind_alert(sqlite3_stmt *statement, const struct ms_alert *alert)
            sqlite3_bind_int(statement, index++, alert->target_pid) == SQLITE_OK &&
            sqlite3_bind_text(statement, index++, alert->target_exe, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
            sqlite3_bind_text(statement, index++, alert->evidence, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
-           sqlite3_bind_int(statement, index, alert->enrichment_incomplete) == SQLITE_OK;
+           sqlite3_bind_int(statement, index++, alert->enrichment_incomplete) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index++, alert->action) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->username, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->launcher_exe, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->parent_exe, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index, alert->arguments_truncated) == SQLITE_OK;
 }
 
 bool
 ms_store_insert(struct ms_store *store, struct ms_alert *alert, struct ms_error *error)
 {
     static const char sql[] =
-        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     sqlite3_stmt *statement = NULL;
     int result;
 
@@ -244,14 +269,23 @@ read_alert(sqlite3_stmt *statement, struct ms_alert *alert, struct ms_error *err
         .uid = (uid_t)sqlite3_column_int64(statement, 8),
         .target_pid = sqlite3_column_int(statement, 12),
         .enrichment_incomplete = sqlite3_column_int(statement, 15) != 0,
+        .action = (enum ms_alert_action)sqlite3_column_int(statement, 16),
+        .arguments_truncated = sqlite3_column_int(statement, 20) != 0,
     };
+    if (alert->action != MS_ALERT_DETECTED && alert->action != MS_ALERT_BLOCKED) {
+        set_error(error, "store_data", "stored alert contains an invalid action");
+        return false;
+    }
     return copy_column(statement, 4, alert->rule_id, sizeof alert->rule_id, error) &&
            copy_column(statement, 5, alert->explanation, sizeof alert->explanation, error) &&
            copy_column(statement, 9, alert->comm, sizeof alert->comm, error) &&
            copy_column(statement, 10, alert->exe, sizeof alert->exe, error) &&
            copy_column(statement, 11, alert->cmdline, sizeof alert->cmdline, error) &&
            copy_column(statement, 13, alert->target_exe, sizeof alert->target_exe, error) &&
-           copy_column(statement, 14, alert->evidence, sizeof alert->evidence, error);
+           copy_column(statement, 14, alert->evidence, sizeof alert->evidence, error) &&
+           copy_column(statement, 17, alert->username, sizeof alert->username, error) &&
+           copy_column(statement, 18, alert->launcher_exe, sizeof alert->launcher_exe, error) &&
+           copy_column(statement, 19, alert->parent_exe, sizeof alert->parent_exe, error);
 }
 
 void
@@ -268,7 +302,7 @@ ms_store_list(struct ms_store *store, int64_t before_id, enum ms_severity minimu
               size_t limit, struct ms_alert_page *page, struct ms_error *error)
 {
     static const char sql[] =
-        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete "
+        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated "
         "FROM alerts WHERE (?=0 OR id<?) AND severity>=? ORDER BY id DESC LIMIT ?";
     sqlite3_stmt *statement = NULL;
     struct ms_alert_page result = {0};

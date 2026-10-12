@@ -8,11 +8,12 @@ license=('custom:LicenseRef-Not-Specified')
 conflicts=('filelessd')
 replaces=('filelessd')
 install=memspyd.install
-depends=('libbpf' 'glib2' 'json-c' 'sqlite' 'gtk3' 'libayatana-appindicator' 'libnotify')
+depends=('libbpf' 'glib2' 'json-c' 'sqlite' 'gtk3' 'libayatana-appindicator' 'libnotify' 'polkit')
 makedepends=('meson' 'ninja' 'clang' 'bpftool')
 optdepends=('gnome-shell-extension-appindicator: GNOME panel icon support; KDE Plasma supports it natively')
 source=("$pkgname-$pkgver.tar.gz")
 sha256sums=('SKIP')
+backup=('etc/memspy/allowlist.conf' 'etc/memspy/response-allowlist.conf')
 
 build() {
   arch-meson "$pkgname-$pkgver" build -Dintegration_tests=false

@@ -24,9 +24,12 @@ struct ui_app {
     bool notifications_ready;
     char *state_path;
     GThread *connection_thread;
+    GThread *response_thread;
     GMutex mutex;
     GCond wake;
     struct ms_client *client;
+    struct ms_client *response_client;
+    guint response_source;
     int64_t known_id;
 };
 
@@ -44,6 +47,14 @@ struct alert_event {
 struct health_event {
     struct ui_app *ui;
     struct ms_health health;
+};
+
+struct response_request {
+    struct ui_app *ui;
+    bool enabled;
+    bool success;
+    struct ms_health health;
+    struct ms_error error;
 };
 
 static void
@@ -168,6 +179,109 @@ apply_disconnected(gpointer userdata)
         update_indicator(ui);
     }
     return G_SOURCE_REMOVE;
+}
+
+static const char *
+response_error_message(const struct ms_error *error)
+{
+    if (strcmp(error->code, "authorization_cancelled") == 0)
+        return "Administrator authentication was cancelled";
+    if (strcmp(error->code, "authorization_denied") == 0)
+        return "Administrator authorization was denied";
+    if (strcmp(error->code, "authorization_unavailable") == 0)
+        return "Administrator authentication is unavailable";
+    if (strcmp(error->code, "authorization_timeout") == 0)
+        return "Administrator authentication timed out";
+    if (strcmp(error->code, "authorization_stale_peer") == 0)
+        return "Authorization expired; try again";
+    if (strcmp(error->code, "connect_failed") == 0 ||
+        strcmp(error->code, "disconnected") == 0)
+        return "Detector connection was lost";
+    return "Response mode could not be changed";
+}
+
+static gboolean
+apply_response_result(gpointer userdata)
+{
+    struct response_request *request = userdata;
+    struct ui_app *ui = request->ui;
+    GThread *thread;
+
+    g_mutex_lock(&ui->mutex);
+    thread = ui->response_thread;
+    ui->response_thread = NULL;
+    ui->response_source = 0;
+    g_mutex_unlock(&ui->mutex);
+    if (thread != NULL)
+        g_thread_join(thread);
+    if (g_atomic_int_get(&ui->stopping))
+        return G_SOURCE_REMOVE;
+    if (request->success) {
+        ms_ui_state_apply_health(&ui->state, &request->health);
+        ms_window_set_health(ui->window, &request->health);
+        ms_window_set_response_pending(ui->window, false);
+        update_indicator(ui);
+    } else {
+        ms_window_set_response_error(ui->window, response_error_message(&request->error));
+    }
+    return G_SOURCE_REMOVE;
+}
+
+static gpointer
+response_worker(gpointer userdata)
+{
+    struct response_request *request = userdata;
+    struct ui_app *ui = request->ui;
+    struct ms_client *client = NULL;
+
+    request->success = ms_client_connect(MEMSPY_SOCKET_PATH, &client, &request->error);
+    if (request->success) {
+        g_mutex_lock(&ui->mutex);
+        if (g_atomic_int_get(&ui->stopping)) {
+            g_mutex_unlock(&ui->mutex);
+            ms_client_close(client);
+            g_free(request);
+            return NULL;
+        }
+        ui->response_client = client;
+        g_mutex_unlock(&ui->mutex);
+        request->success = ms_client_set_response(client, request->enabled,
+                                                  &request->health, &request->error);
+        g_mutex_lock(&ui->mutex);
+        if (ui->response_client == client)
+            ui->response_client = NULL;
+        g_mutex_unlock(&ui->mutex);
+        ms_client_close(client);
+    }
+
+    g_mutex_lock(&ui->mutex);
+    if (g_atomic_int_get(&ui->stopping)) {
+        g_mutex_unlock(&ui->mutex);
+        g_free(request);
+        return NULL;
+    }
+    ui->response_source = g_idle_add_full(G_PRIORITY_DEFAULT, apply_response_result,
+                                          request, g_free);
+    g_mutex_unlock(&ui->mutex);
+    return NULL;
+}
+
+static void
+set_response(bool enabled, void *userdata)
+{
+    struct ui_app *ui = userdata;
+    struct response_request *request = g_new0(struct response_request, 1);
+
+    request->ui = ui;
+    request->enabled = enabled;
+    g_mutex_lock(&ui->mutex);
+    if (ui->response_thread == NULL && !g_atomic_int_get(&ui->stopping)) {
+        ms_window_set_response_pending(ui->window, true);
+        ui->response_thread = g_thread_new("memspy-ui-response", response_worker, request);
+    } else {
+        g_free(request);
+    }
+    g_mutex_unlock(&ui->mutex);
 }
 
 static void
@@ -310,6 +424,7 @@ activate(GtkApplication *application, gpointer userdata)
     ui->application = application;
     load_css();
     ui->window = ms_window_new(application);
+    ms_window_set_response_handler(ui->window, set_response, ui);
     g_signal_connect(ms_window_widget(ui->window), "delete-event",
                      G_CALLBACK(hide_on_delete), ui);
     ms_ui_state_init(&ui->state);
@@ -332,14 +447,29 @@ activate(GtkApplication *application, gpointer userdata)
 static void
 shutdown_ui(struct ui_app *ui)
 {
+    GThread *response_thread;
+    guint response_source;
+
     g_mutex_lock(&ui->mutex);
     g_atomic_int_set(&ui->stopping, true);
     if (ui->client != NULL)
         ms_client_interrupt(ui->client);
+    if (ui->response_client != NULL)
+        ms_client_interrupt(ui->response_client);
     g_cond_signal(&ui->wake);
     g_mutex_unlock(&ui->mutex);
     if (ui->connection_thread != NULL)
         g_thread_join(ui->connection_thread);
+    g_mutex_lock(&ui->mutex);
+    response_thread = ui->response_thread;
+    ui->response_thread = NULL;
+    response_source = ui->response_source;
+    ui->response_source = 0;
+    g_mutex_unlock(&ui->mutex);
+    if (response_thread != NULL)
+        g_thread_join(response_thread);
+    if (response_source != 0)
+        g_source_remove(response_source);
     save_state(ui);
     ms_indicator_free(ui->indicator);
     ms_notifications_uninit();

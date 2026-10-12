@@ -9,6 +9,10 @@
 
 struct ms_api_callbacks {
     void (*peer_connected)(pid_t pid, uid_t uid, void *userdata);
+    bool (*authorize_response)(const struct ms_peer_identity *peer, void *userdata,
+                               struct ms_error *error);
+    bool (*set_response)(const struct ms_peer_identity *peer, bool enabled,
+                         void *userdata, struct ms_error *error);
     void *userdata;
 };
 

@@ -33,8 +33,10 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
               sizeof alert.rule_id);
     g_strlcpy(alert.explanation, "A suspicious executable image was observed", sizeof alert.explanation);
     g_strlcpy(alert.comm, "fixture", sizeof alert.comm);
+    g_strlcpy(alert.username, "analyst", sizeof alert.username);
     g_strlcpy(alert.exe, "/memfd:fixture (deleted)", sizeof alert.exe);
     g_strlcpy(alert.cmdline, cmdline, sizeof alert.cmdline);
+    g_strlcpy(alert.parent_exe, "/usr/bin/terminal", sizeof alert.parent_exe);
     g_strlcpy(alert.evidence, "memfd-backed executable image", sizeof alert.evidence);
     return alert;
 }
@@ -88,6 +90,32 @@ has_label_text(GtkWidget *widget, const char *text)
     return search.found;
 }
 
+struct label_count {
+    const char *text;
+    unsigned int count;
+};
+
+static void
+count_label_text(GtkWidget *widget, gpointer userdata)
+{
+    struct label_count *search = userdata;
+
+    if (GTK_IS_LABEL(widget) &&
+        g_strcmp0(gtk_label_get_text(GTK_LABEL(widget)), search->text) == 0)
+        ++search->count;
+    if (GTK_IS_CONTAINER(widget))
+        gtk_container_forall(GTK_CONTAINER(widget), count_label_text, search);
+}
+
+static unsigned int
+label_text_count(GtkWidget *widget, const char *text)
+{
+    struct label_count search = {.text = text};
+
+    count_label_text(widget, &search);
+    return search.count;
+}
+
 struct class_search {
     const char *name;
     unsigned int count;
@@ -111,6 +139,163 @@ style_class_count(GtkWidget *widget, const char *name)
 
     count_style_class(widget, &search);
     return search.count;
+}
+
+static GtkWidget *
+find_switch(GtkWidget *widget)
+{
+    GList *children;
+    GList *item;
+
+    if (GTK_IS_SWITCH(widget))
+        return widget;
+    if (!GTK_IS_CONTAINER(widget))
+        return NULL;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (item = children; item != NULL; item = item->next) {
+        GtkWidget *result = find_switch(GTK_WIDGET(item->data));
+        if (result != NULL) {
+            g_list_free(children);
+            return result;
+        }
+    }
+    g_list_free(children);
+    return NULL;
+}
+
+struct response_calls {
+    unsigned int count;
+    bool enabled;
+};
+
+static void
+response_changed(bool enabled, void *userdata)
+{
+    struct response_calls *calls = userdata;
+    ++calls->count;
+    calls->enabled = enabled;
+}
+
+static void
+test_response_switch_states_and_accessibility(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct response_calls calls = {0};
+    struct ms_health health = {
+        .state = MS_HEALTH_HEALTHY,
+        .protected = true,
+        .storage_available = true,
+        .response_supported = true,
+    };
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *control = find_switch(widget);
+    AtkObject *accessible;
+
+    g_assert_nonnull(control);
+    accessible = gtk_widget_get_accessible(control);
+    ms_window_set_response_handler(window, response_changed, &calls);
+
+    ms_window_set_health(window, &health);
+    g_assert_true(has_label_text(widget, "Off — Detection only"));
+    g_assert_false(gtk_switch_get_active(GTK_SWITCH(control)));
+    g_assert_true(gtk_widget_get_sensitive(control));
+    g_assert_cmpstr(atk_object_get_name(accessible), ==, "Response mode: Off — Detection only");
+    AtkStateSet *states = atk_object_ref_state_set(accessible);
+    g_assert_false(atk_state_set_contains_state(states, ATK_STATE_CHECKED));
+    g_object_unref(states);
+
+    health.response_requested = true;
+    health.response_active = true;
+    ms_window_set_health(window, &health);
+    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(gtk_switch_get_active(GTK_SWITCH(control)));
+    g_assert_cmpuint(calls.count, ==, 0);
+    states = atk_object_ref_state_set(accessible);
+    g_assert_true(atk_state_set_contains_state(states, ATK_STATE_CHECKED));
+    g_object_unref(states);
+
+    ms_window_set_response_pending(window, true);
+    g_assert_true(has_label_text(widget, "Pending — Waiting for administrator authentication"));
+    g_assert_false(gtk_widget_get_sensitive(control));
+
+    ms_window_set_response_pending(window, false);
+    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(gtk_widget_get_sensitive(control));
+    ms_window_set_response_error(window, "Administrator authentication was cancelled");
+    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(has_label_text(widget, "Administrator authentication was cancelled"));
+    g_assert_true(gtk_switch_get_active(GTK_SWITCH(control)));
+
+    health.response_supported = false;
+    health.response_requested = false;
+    health.response_active = false;
+    g_strlcpy(health.response_reason, "BPF LSM is not active", sizeof health.response_reason);
+    ms_window_set_health(window, &health);
+    g_assert_true(has_label_text(widget, "Unavailable — BPF LSM is not active"));
+    g_assert_false(gtk_widget_get_sensitive(control));
+    g_assert_cmpstr(atk_object_get_name(accessible), ==,
+                    "Response mode: Unavailable — BPF LSM is not active");
+
+    health.response_supported = true;
+    health.response_reason[0] = '\0';
+    ms_window_set_health(window, &health);
+    gtk_switch_set_active(GTK_SWITCH(control), true);
+    g_assert_cmpuint(calls.count, ==, 1);
+    g_assert_true(calls.enabled);
+    ms_window_set_response_pending(window, true);
+    ms_window_set_response_error(window, "Response mode could not be changed");
+    g_assert_true(has_label_text(widget, "Response mode could not be changed"));
+    g_assert_false(gtk_switch_get_active(GTK_SWITCH(control)));
+    g_assert_cmpuint(calls.count, ==, 1);
+
+    ms_window_free(window);
+}
+
+static void
+test_alert_outcomes_and_grouped_process_details(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert detected = fixture_alert(1, MS_SEVERITY_MEDIUM, "fixture --detected");
+    struct ms_alert blocked = fixture_alert(2, MS_SEVERITY_HIGH,
+        "fixture --blocked 'argument with spaces'");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+
+    detected.action = MS_ALERT_DETECTED;
+    blocked.action = MS_ALERT_BLOCKED;
+    blocked.ppid = 99;
+    blocked.target_pid = 7331;
+    blocked.arguments_truncated = true;
+    g_strlcpy(blocked.launcher_exe, "/usr/bin/loader", sizeof blocked.launcher_exe);
+    g_strlcpy(blocked.target_exe, "/memfd:payload", sizeof blocked.target_exe);
+
+    g_assert_true(ms_window_add_alert(window, &detected));
+    g_assert_true(ms_window_add_alert(window, &blocked));
+    g_assert_true(has_label_text(widget, "Detected"));
+    g_assert_true(has_label_text(widget, "Blocked"));
+    g_assert_true(has_label_text(widget, "Process details"));
+    g_assert_true(has_label_text(widget, "Identity"));
+    g_assert_true(has_label_text(widget, "Execution"));
+    g_assert_true(has_label_text(widget, "Target"));
+    g_assert_true(has_label_text(widget, "Detection"));
+    g_assert_true(has_label_text(widget, "User"));
+    g_assert_true(has_label_text(widget, "Process"));
+    g_assert_true(has_label_text(widget, "Parent process"));
+    g_assert_true(has_label_text(widget, "Attempted executable"));
+    g_assert_true(has_label_text(widget, "Command line"));
+    g_assert_true(has_label_text(widget, "Launcher executable"));
+    g_assert_true(has_label_text(widget, "Target PID"));
+    g_assert_true(has_label_text(widget, "Target executable"));
+    g_assert_true(has_label_text(widget, "Outcome"));
+    g_assert_true(has_label_text(widget, "Rule"));
+    g_assert_true(has_label_text(widget, "Detection signal"));
+    g_assert_true(has_label_text(widget, "Arguments truncated"));
+    g_assert_cmpuint(label_text_count(widget, "Target"), ==, 1);
+    g_assert_cmpuint(label_text_count(widget, "Launcher executable"), ==, 1);
+    g_assert_cmpuint(label_text_count(widget, "Arguments truncated"), ==, 1);
+    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-blocked"), ==, 1);
+    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-detected"), ==, 1);
+
+    ms_window_free(window);
 }
 
 static void
@@ -185,5 +370,9 @@ main(int argc, char **argv)
     g_test_add_func("/ui/indicator-constructs", test_indicator_constructs);
     g_test_add_func("/ui/window-states-filters-accessibility",
                     test_window_states_filters_and_accessibility);
+    g_test_add_func("/ui/response-switch-states-accessibility",
+                    test_response_switch_states_and_accessibility);
+    g_test_add_func("/ui/alert-outcomes-grouped-process-details",
+                    test_alert_outcomes_and_grouped_process_details);
     return g_test_run();
 }

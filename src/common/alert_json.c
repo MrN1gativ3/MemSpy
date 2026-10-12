@@ -31,6 +31,16 @@ severity_name(enum ms_severity severity)
     return NULL;
 }
 
+static const char *
+action_name(enum ms_alert_action action)
+{
+    if (action == MS_ALERT_DETECTED)
+        return "detected";
+    if (action == MS_ALERT_BLOCKED)
+        return "blocked";
+    return NULL;
+}
+
 static bool
 add_string(json_object *object, const char *name, const char *value, size_t capacity)
 {
@@ -50,27 +60,34 @@ json_object *
 ms_alert_to_json(const struct ms_alert *alert)
 {
     const char *severity;
+    const char *action;
     json_object *object;
 
-    if (alert == NULL || (severity = severity_name(alert->severity)) == NULL)
+    if (alert == NULL || (severity = severity_name(alert->severity)) == NULL ||
+        (action = action_name(alert->action)) == NULL)
         return NULL;
 
     object = json_object_new_object();
     json_object_object_add(object, "id", json_object_new_int64(alert->id));
     json_object_object_add(object, "timestamp_utc", json_object_new_int64(alert->timestamp_utc));
     json_object_object_add(object, "observed_boottime_ns", json_object_new_uint64(alert->observed_boottime_ns));
+    json_object_object_add(object, "action", json_object_new_string(action));
     json_object_object_add(object, "severity", json_object_new_string(severity));
     json_object_object_add(object, "pid", json_object_new_int64(alert->pid));
     json_object_object_add(object, "ppid", json_object_new_int64(alert->ppid));
     json_object_object_add(object, "uid", json_object_new_uint64(alert->uid));
     json_object_object_add(object, "target_pid", json_object_new_int64(alert->target_pid));
     json_object_object_add(object, "enrichment_incomplete", json_object_new_boolean(alert->enrichment_incomplete));
+    json_object_object_add(object, "arguments_truncated", json_object_new_boolean(alert->arguments_truncated));
 
     if (!add_string(object, "rule_id", alert->rule_id, sizeof alert->rule_id) ||
         !add_string(object, "explanation", alert->explanation, sizeof alert->explanation) ||
         !add_string(object, "comm", alert->comm, sizeof alert->comm) ||
+        !add_string(object, "username", alert->username, sizeof alert->username) ||
         !add_string(object, "exe", alert->exe, sizeof alert->exe) ||
         !add_string(object, "cmdline", alert->cmdline, sizeof alert->cmdline) ||
+        !add_string(object, "launcher_exe", alert->launcher_exe, sizeof alert->launcher_exe) ||
+        !add_string(object, "parent_exe", alert->parent_exe, sizeof alert->parent_exe) ||
         !add_string(object, "target_exe", alert->target_exe, sizeof alert->target_exe) ||
         !add_string(object, "evidence", alert->evidence, sizeof alert->evidence)) {
         json_object_put(object);
@@ -150,6 +167,7 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
     struct ms_alert parsed = {0};
     json_object *value;
     const char *severity;
+    const char *action;
     int64_t number;
 
     if (json == NULL || alert == NULL || json_object_get_type(json) != json_type_object) {
@@ -173,6 +191,18 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
         return false;
     }
 
+    if (!get_required(json, "action", json_type_string, &value, error))
+        return false;
+    action = json_object_get_string(value);
+    if (strcmp(action, "detected") == 0)
+        parsed.action = MS_ALERT_DETECTED;
+    else if (strcmp(action, "blocked") == 0)
+        parsed.action = MS_ALERT_BLOCKED;
+    else {
+        set_error(error, "invalid_alert", "field 'action' is invalid");
+        return false;
+    }
+
     if (!copy_string(json, "rule_id", parsed.rule_id, sizeof parsed.rule_id, error) ||
         !copy_string(json, "explanation", parsed.explanation, sizeof parsed.explanation, error) ||
         !get_nonnegative_int(json, "pid", INT_MAX, &number, error))
@@ -185,8 +215,11 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
         return false;
     parsed.uid = (uid_t)number;
     if (!copy_string(json, "comm", parsed.comm, sizeof parsed.comm, error) ||
+        !copy_string(json, "username", parsed.username, sizeof parsed.username, error) ||
         !copy_string(json, "exe", parsed.exe, sizeof parsed.exe, error) ||
         !copy_string(json, "cmdline", parsed.cmdline, sizeof parsed.cmdline, error) ||
+        !copy_string(json, "launcher_exe", parsed.launcher_exe, sizeof parsed.launcher_exe, error) ||
+        !copy_string(json, "parent_exe", parsed.parent_exe, sizeof parsed.parent_exe, error) ||
         !get_nonnegative_int(json, "target_pid", INT_MAX, &number, error))
         return false;
     parsed.target_pid = (pid_t)number;
@@ -195,6 +228,9 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
         !get_required(json, "enrichment_incomplete", json_type_boolean, &value, error))
         return false;
     parsed.enrichment_incomplete = json_object_get_boolean(value);
+    if (!get_required(json, "arguments_truncated", json_type_boolean, &value, error))
+        return false;
+    parsed.arguments_truncated = json_object_get_boolean(value);
 
     *alert = parsed;
     if (error != NULL)

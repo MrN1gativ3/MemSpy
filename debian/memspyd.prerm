@@ -1,0 +1,10 @@
+#!/bin/sh
+set -e
+
+if [ "$1" = remove ] || [ "$1" = deconfigure ]; then
+    systemctl stop memspyd.service >/dev/null 2>&1 || true
+    /usr/libexec/memspy/cleanup-bpf
+fi
+
+#DEBHELPER#
+exit 0

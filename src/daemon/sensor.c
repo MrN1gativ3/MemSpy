@@ -5,6 +5,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <glib.h>
+#include <pwd.h>
 #include <stdarg.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -13,6 +14,9 @@
 #include <unistd.h>
 
 #include "memspy.skel.h"
+
+#define MS_CAPTURED_ARGUMENTS 16U
+#define MS_CAPTURED_ARGUMENT_BYTES 2048U
 
 struct ms_sensor {
     struct memspy_bpf *skeleton;
@@ -75,13 +79,80 @@ read_executable(pid_t pid, char *destination, size_t capacity)
 }
 
 static bool
-read_command_line(pid_t pid, char *destination, size_t capacity)
+read_username(uid_t uid, char *destination, size_t capacity)
+{
+    long suggested = sysconf(_SC_GETPW_R_SIZE_MAX);
+    size_t size = suggested > 0 ? (size_t)suggested : 16384U;
+    g_autofree char *buffer = g_malloc(size);
+    struct passwd entry;
+    struct passwd *result = NULL;
+
+    if (getpwuid_r(uid, &entry, buffer, size, &result) != 0 || result == NULL)
+        return false;
+    g_strlcpy(destination, result->pw_name, capacity);
+    return destination[0] != '\0';
+}
+
+bool
+ms_format_proc_arguments(const char *raw, size_t length, char *out, size_t capacity,
+                         bool *truncated)
+{
+    size_t offset = 0;
+    size_t used = 0;
+    size_t available;
+    unsigned int count = 0;
+
+    if (raw == NULL || out == NULL || capacity == 0 || truncated == NULL)
+        return false;
+    out[0] = '\0';
+    *truncated = length > MS_CAPTURED_ARGUMENT_BYTES;
+    available = MIN(length, MS_CAPTURED_ARGUMENT_BYTES);
+    while (offset < available) {
+        const char *separator;
+        size_t argument_length;
+        g_autofree char *valid = NULL;
+        g_autofree char *quoted = NULL;
+        size_t quoted_length;
+
+        if (count == MS_CAPTURED_ARGUMENTS) {
+            *truncated = true;
+            break;
+        }
+        separator = memchr(raw + offset, '\0', available - offset);
+        argument_length = separator == NULL ? available - offset :
+            (size_t)(separator - (raw + offset));
+        valid = g_utf8_make_valid(raw + offset, (gssize)argument_length);
+        quoted = g_shell_quote(valid);
+        quoted_length = strlen(quoted);
+        if (used + (used == 0 ? 0U : 1U) + quoted_length >= capacity) {
+            *truncated = true;
+            break;
+        }
+        if (used != 0)
+            out[used++] = ' ';
+        memcpy(out + used, quoted, quoted_length + 1U);
+        used += quoted_length;
+        ++count;
+        if (separator == NULL) {
+            offset = available;
+            if (available < length)
+                *truncated = true;
+        } else {
+            offset += argument_length + 1U;
+        }
+    }
+    if (offset < length)
+        *truncated = true;
+    return true;
+}
+
+static bool
+read_command_line(pid_t pid, char *destination, size_t capacity, bool *truncated)
 {
     g_autofree char *path = g_strdup_printf("/proc/%d/cmdline", pid);
     int descriptor = open(path, O_RDONLY | O_CLOEXEC);
-    char raw[MS_MAX_CMDLINE_BYTES];
+    char raw[MS_CAPTURED_ARGUMENT_BYTES + 1U];
     ssize_t length;
-    g_autofree char *valid = NULL;
 
     if (descriptor < 0)
         return false;
@@ -89,15 +160,7 @@ read_command_line(pid_t pid, char *destination, size_t capacity)
     close(descriptor);
     if (length < 0)
         return false;
-    for (ssize_t index = 0; index < length; ++index) {
-        if (raw[index] == '\0')
-            raw[index] = ' ';
-    }
-    while (length > 0 && raw[length - 1] == ' ')
-        --length;
-    valid = g_utf8_make_valid(raw, length);
-    g_strlcpy(destination, valid, capacity);
-    return true;
+    return ms_format_proc_arguments(raw, (size_t)length, destination, capacity, truncated);
 }
 
 bool
@@ -136,7 +199,12 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
                      read_executable(observation->process.pid, observation->exe,
                                      sizeof observation->exe) &&
                      read_command_line(observation->process.pid, observation->cmdline,
-                                       sizeof observation->cmdline);
+                                       sizeof observation->cmdline,
+                                       &observation->arguments_truncated) &&
+                     read_username(observation->uid, observation->username,
+                                   sizeof observation->username) &&
+                     read_executable(observation->ppid, observation->parent_exe,
+                                     sizeof observation->parent_exe);
     if (strstr(observation->exe, "memfd:") != NULL)
         observation->flags |= MS_OBSERVATION_MEMFD;
     if (g_str_has_suffix(observation->exe, " (deleted)"))

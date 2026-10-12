@@ -2,6 +2,7 @@
 #define MEMSPY_SENSOR_H
 
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "memspy/observation.h"
@@ -26,5 +27,7 @@ void ms_sensor_free(struct ms_sensor *sensor);
 bool ms_sensor_observation_from_event(const struct ms_kernel_event *event,
                                       struct ms_observation *observation,
                                       struct ms_error *error);
+bool ms_format_proc_arguments(const char *raw, size_t length, char *out, size_t capacity,
+                              bool *truncated);
 
 #endif

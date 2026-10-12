@@ -12,6 +12,8 @@ bool ms_client_connect(const char *path, struct ms_client **out, struct ms_error
 bool ms_client_connect_fd(int connected_fd, struct ms_client **out, struct ms_error *error);
 bool ms_client_get_status(struct ms_client *client, struct ms_health *health,
                           struct ms_error *error);
+bool ms_client_set_response(struct ms_client *client, bool enabled,
+                            struct ms_health *confirmed, struct ms_error *error);
 bool ms_client_list_alerts(struct ms_client *client, int64_t before_id,
                            enum ms_severity minimum, size_t limit,
                            struct ms_alert_page *page, struct ms_error *error);

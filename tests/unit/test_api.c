@@ -7,6 +7,7 @@
 #include <unistd.h>
 
 #include "api.h"
+#include "authorizer.h"
 #include "client.h"
 
 struct api_fixture {
@@ -18,7 +19,14 @@ struct api_fixture {
     pid_t peer_pid;
     uid_t peer_uid;
     gint peer_count;
+    const char *authorization_error;
+    guint response_calls;
+    gint active_response_calls;
+    gint maximum_response_calls;
 };
+
+static int raw_connect(struct ms_api *api);
+static char *read_line(int descriptor);
 
 static void
 peer_connected(pid_t pid, uid_t uid, void *userdata)
@@ -29,6 +37,50 @@ peer_connected(pid_t pid, uid_t uid, void *userdata)
     g_atomic_int_inc(&fixture->peer_count);
 }
 
+static bool
+authorize_response(const struct ms_peer_identity *peer, void *userdata,
+                   struct ms_error *error)
+{
+    struct api_fixture *fixture = userdata;
+    g_assert_cmpint(peer->pid, ==, getpid());
+    g_assert_cmpuint(peer->uid, ==, getuid());
+    g_assert_cmpuint(peer->start_time, >, 0);
+    if (fixture->authorization_error != NULL) {
+        g_strlcpy(error->code, fixture->authorization_error, sizeof error->code);
+        return false;
+    }
+    return true;
+}
+
+static bool
+set_response(const struct ms_peer_identity *peer, bool enabled, void *userdata,
+             struct ms_error *error)
+{
+    struct api_fixture *fixture = userdata;
+    struct ms_health health = {
+        .state = MS_HEALTH_HEALTHY,
+        .protected = true,
+        .storage_available = true,
+        .response_supported = true,
+        .response_requested = enabled,
+        .response_active = enabled,
+        .blocked_execs = 4,
+        .lost_block_events = 1,
+    };
+    gint active;
+    (void)peer;
+    (void)error;
+
+    active = g_atomic_int_add(&fixture->active_response_calls, 1) + 1;
+    if (active > g_atomic_int_get(&fixture->maximum_response_calls))
+        g_atomic_int_set(&fixture->maximum_response_calls, active);
+    g_usleep(20000);
+    ++fixture->response_calls;
+    ms_api_publish_health(fixture->api, &health);
+    g_atomic_int_add(&fixture->active_response_calls, -1);
+    return true;
+}
+
 static void
 fixture_setup(struct api_fixture *fixture, gconstpointer user_data)
 {
@@ -37,8 +89,18 @@ fixture_setup(struct api_fixture *fixture, gconstpointer user_data)
         .state = MS_HEALTH_HEALTHY,
         .protected = true,
         .storage_available = true,
+        .response_supported = true,
+        .response_requested = false,
+        .response_active = false,
+        .blocked_execs = 3,
+        .lost_block_events = 2,
     };
-    struct ms_api_callbacks callbacks = {.peer_connected = peer_connected, .userdata = fixture};
+    struct ms_api_callbacks callbacks = {
+        .peer_connected = peer_connected,
+        .authorize_response = authorize_response,
+        .set_response = set_response,
+        .userdata = fixture,
+    };
 
     (void)user_data;
     fixture->directory = g_dir_make_tmp("memspy-api-XXXXXX", NULL);
@@ -114,11 +176,117 @@ test_api_handshake_status_and_history(struct api_fixture *fixture, gconstpointer
     g_assert_true(ms_client_get_status(client, &health, &error));
     g_assert_cmpint(health.state, ==, MS_HEALTH_HEALTHY);
     g_assert_true(health.protected);
+    g_assert_true(health.response_supported);
+    g_assert_false(health.response_requested);
+    g_assert_false(health.response_active);
+    g_assert_cmpuint(health.blocked_execs, ==, 3);
+    g_assert_cmpuint(health.lost_block_events, ==, 2);
     g_assert_true(ms_client_list_alerts(client, 0, MS_SEVERITY_HIGH, 1000, &page, &error));
     g_assert_cmpuint(page.length, ==, 1);
     g_assert_cmpint(page.items[0].id, ==, high.id);
     ms_alert_page_clear(&page);
     ms_client_close(client);
+}
+
+static void
+test_api_response_control(struct api_fixture *fixture, gconstpointer user_data)
+{
+    static const char *const errors[] = {
+        "authorization_denied", "authorization_cancelled",
+        "authorization_unavailable", "authorization_timeout",
+        "authorization_stale_peer",
+    };
+    struct ms_client *client = NULL;
+    struct ms_health confirmed = {0};
+    struct ms_error error = {0};
+    g_autofree char *line = NULL;
+    int descriptor;
+    (void)user_data;
+
+    descriptor = raw_connect(fixture->api);
+    static const char before_hello[] = "{\"v\":2,\"op\":\"set_response\",\"enabled\":true}\n";
+    g_assert_cmpint(write(descriptor, before_hello, sizeof before_hello - 1U), ==,
+                    (ssize_t)(sizeof before_hello - 1U));
+    g_assert_cmpint(read(descriptor, &(char){0}, 1), ==, 0);
+    close(descriptor);
+
+    descriptor = raw_connect(fixture->api);
+    static const char old_hello[] = "{\"v\":1,\"op\":\"hello\"}\n";
+    g_assert_cmpint(write(descriptor, old_hello, sizeof old_hello - 1U), ==,
+                    (ssize_t)(sizeof old_hello - 1U));
+    line = read_line(descriptor);
+    g_assert_nonnull(strstr(line, "unsupported_version"));
+    close(descriptor);
+
+    descriptor = raw_connect(fixture->api);
+    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
+    static const char invalid[] = "{\"v\":2,\"op\":\"set_response\",\"enabled\":1}\n";
+    g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==,
+                    (ssize_t)(sizeof hello - 1U));
+    g_clear_pointer(&line, g_free);
+    line = read_line(descriptor);
+    g_assert_cmpint(write(descriptor, invalid, sizeof invalid - 1U), ==,
+                    (ssize_t)(sizeof invalid - 1U));
+    g_clear_pointer(&line, g_free);
+    line = read_line(descriptor);
+    g_assert_nonnull(strstr(line, "invalid_request"));
+    close(descriptor);
+
+    int pair[2];
+    g_assert_cmpint(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), ==, 0);
+    g_assert_true(ms_api_accept_fd(fixture->api, pair[0]));
+    g_assert_true(ms_client_connect_fd(pair[1], &client, &error));
+    for (size_t index = 0; index < G_N_ELEMENTS(errors); ++index) {
+        fixture->authorization_error = errors[index];
+        g_assert_false(ms_client_set_response(client, true, &confirmed, &error));
+        g_assert_cmpstr(error.code, ==, errors[index]);
+    }
+    fixture->authorization_error = NULL;
+    g_assert_true(ms_client_set_response(client, true, &confirmed, &error));
+    g_assert_true(confirmed.response_supported);
+    g_assert_true(confirmed.response_requested);
+    g_assert_true(confirmed.response_active);
+    g_assert_cmpuint(confirmed.blocked_execs, ==, 4);
+    g_assert_cmpuint(confirmed.lost_block_events, ==, 1);
+    ms_client_close(client);
+}
+
+struct response_thread {
+    struct ms_client *client;
+    bool success;
+};
+
+static gpointer
+set_response_thread(gpointer userdata)
+{
+    struct response_thread *thread = userdata;
+    struct ms_health health;
+    struct ms_error error = {0};
+    thread->success = ms_client_set_response(thread->client, true, &health, &error);
+    return NULL;
+}
+
+static void
+test_api_serializes_response_requests(struct api_fixture *fixture, gconstpointer user_data)
+{
+    struct response_thread calls[2] = {0};
+    GThread *threads[2];
+    struct ms_error error = {0};
+    (void)user_data;
+
+    for (size_t index = 0; index < G_N_ELEMENTS(calls); ++index) {
+        int pair[2];
+        g_assert_cmpint(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), ==, 0);
+        g_assert_true(ms_api_accept_fd(fixture->api, pair[0]));
+        g_assert_true(ms_client_connect_fd(pair[1], &calls[index].client, &error));
+        threads[index] = g_thread_new("response-test", set_response_thread, &calls[index]);
+    }
+    for (size_t index = 0; index < G_N_ELEMENTS(calls); ++index) {
+        g_thread_join(threads[index]);
+        g_assert_true(calls[index].success);
+        ms_client_close(calls[index].client);
+    }
+    g_assert_cmpint(g_atomic_int_get(&fixture->maximum_response_calls), ==, 1);
 }
 
 static int
@@ -156,7 +324,7 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
     close(descriptor);
 
     descriptor = raw_connect(fixture->api);
-    static const char status_before_hello[] = "{\"v\":1,\"op\":\"status\"}\n";
+    static const char status_before_hello[] = "{\"v\":2,\"op\":\"status\"}\n";
     g_assert_cmpint(write(descriptor, status_before_hello, sizeof status_before_hello - 1U), ==,
                     (ssize_t)(sizeof status_before_hello - 1U));
     g_clear_pointer(&line, g_free);
@@ -165,8 +333,8 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
     close(descriptor);
 
     descriptor = raw_connect(fixture->api);
-    static const char hello[] = "{\"v\":1,\"op\":\"hello\"}\n";
-    static const char unknown[] = "{\"v\":1,\"op\":\"delete\"}\n";
+    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
+    static const char unknown[] = "{\"v\":2,\"op\":\"delete\"}\n";
     g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==, (ssize_t)(sizeof hello - 1U));
     g_clear_pointer(&line, g_free);
     line = read_line(descriptor);
@@ -179,7 +347,7 @@ test_api_rejects_hostile_clients(struct api_fixture *fixture, gconstpointer user
 
     descriptor = raw_connect(fixture->api);
     static const char invalid_alerts[] =
-        "{\"v\":1,\"op\":\"alerts\",\"before_id\":-1,\"minimum\":0,\"limit\":\"many\"}\n";
+        "{\"v\":2,\"op\":\"alerts\",\"before_id\":-1,\"minimum\":0,\"limit\":\"many\"}\n";
     g_assert_cmpint(write(descriptor, hello, sizeof hello - 1U), ==, (ssize_t)(sizeof hello - 1U));
     g_clear_pointer(&line, g_free);
     line = read_line(descriptor);
@@ -247,8 +415,8 @@ test_api_reports_unavailable_history(void)
     struct ms_store *store = NULL;
     struct ms_error error = {0};
     g_autofree char *line = NULL;
-    static const char hello[] = "{\"v\":1,\"op\":\"hello\"}\n";
-    static const char alerts[] = "{\"v\":1,\"op\":\"alerts\"}\n";
+    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
+    static const char alerts[] = "{\"v\":2,\"op\":\"alerts\"}\n";
     int descriptor;
 
     g_assert_nonnull(api);
@@ -317,11 +485,25 @@ test_api_disconnects_stalled_handshake(void)
 }
 
 static void
+test_authorizer_rejects_changed_process_start(void)
+{
+    struct ms_authorizer *authorizer = ms_authorizer_new();
+    struct ms_peer_identity peer;
+    struct ms_error error = {0};
+
+    g_assert_true(ms_peer_identity_read(getpid(), getuid(), &peer, &error));
+    ++peer.start_time;
+    g_assert_false(ms_authorizer_check(authorizer, &peer, &error));
+    g_assert_cmpstr(error.code, ==, "authorization_stale_peer");
+    ms_authorizer_free(authorizer);
+}
+
+static void
 test_api_disconnects_stalled_subscriber_without_blocking(struct api_fixture *fixture,
                                                           gconstpointer user_data)
 {
-    static const char hello[] = "{\"v\":1,\"op\":\"hello\"}\n";
-    static const char subscribe[] = "{\"v\":1,\"op\":\"subscribe\"}\n";
+    static const char hello[] = "{\"v\":2,\"op\":\"hello\"}\n";
+    static const char subscribe[] = "{\"v\":2,\"op\":\"subscribe\"}\n";
     struct ms_alert alert = sample_alert(MS_SEVERITY_HIGH, "MEMFD_EXEC");
     g_autofree char *line = NULL;
     int descriptor = raw_connect(fixture->api);
@@ -420,9 +602,14 @@ main(int argc, char **argv)
                test_api_streams_alerts_and_health, fixture_teardown);
     g_test_add("/api/stalled-subscriber", struct api_fixture, NULL, fixture_setup,
                test_api_disconnects_stalled_subscriber_without_blocking, fixture_teardown);
+    g_test_add("/api/response-control", struct api_fixture, NULL, fixture_setup,
+               test_api_response_control, fixture_teardown);
+    g_test_add("/api/response-serialization", struct api_fixture, NULL, fixture_setup,
+               test_api_serializes_response_requests, fixture_teardown);
     g_test_add_func("/api/preserve-unowned-socket", test_api_preserves_unowned_socket_path);
     g_test_add_func("/api/unavailable-history", test_api_reports_unavailable_history);
     g_test_add_func("/api/bounded-clients", test_api_bounds_connected_clients);
     g_test_add_func("/api/stalled-handshake", test_api_disconnects_stalled_handshake);
+    g_test_add_func("/api/stale-peer", test_authorizer_rejects_changed_process_start);
     return g_test_run();
 }

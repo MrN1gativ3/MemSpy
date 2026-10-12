@@ -15,6 +15,9 @@ struct ms_window {
     GtkWidget *status_label;
     GtkWidget *status_detail;
     GtkWidget *spinner;
+    GtkWidget *response_switch;
+    GtkWidget *response_label;
+    GtkWidget *response_error;
     GtkWidget *list;
     GtkWidget *empty_box;
     GtkWidget *empty_title;
@@ -23,6 +26,14 @@ struct ms_window {
     GPtrArray *alerts;
     enum ms_ui_filter filter;
     bool monitoring;
+    bool response_connected;
+    bool response_supported;
+    bool response_active;
+    bool response_pending;
+    bool setting_response;
+    char response_reason[256];
+    void (*response_handler)(bool enabled, void *userdata);
+    void *response_userdata;
 };
 
 static void
@@ -109,6 +120,23 @@ new_detail_field(const char *title, const char *value, bool technical)
 }
 
 static void
+add_detail_field(GtkWidget *box, const char *title, const char *value, bool technical)
+{
+    if (value != NULL && value[0] != '\0')
+        gtk_box_pack_start(GTK_BOX(box), new_detail_field(title, value, technical),
+                           false, false, 0);
+}
+
+static GtkWidget *
+new_detail_section(const char *title)
+{
+    GtkWidget *label = new_wrapping_label(title);
+
+    add_class(label, "memspy-detail-section");
+    return label;
+}
+
+static void
 update_filter_labels(struct ms_window *window)
 {
     size_t high = 0;
@@ -134,6 +162,8 @@ static GtkWidget *
 create_alert_row(struct alert_view *view)
 {
     const char *severity = view->alert.severity == MS_SEVERITY_HIGH ? "High" : "Medium";
+    const bool blocked = view->alert.action == MS_ALERT_BLOCKED;
+    const char *outcome = blocked ? "Blocked" : "Detected";
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -141,16 +171,20 @@ create_alert_row(struct alert_view *view)
         view->alert.severity == MS_SEVERITY_HIGH ?
         "memspy-high-symbolic" : "memspy-medium-symbolic", GTK_ICON_SIZE_BUTTON);
     GtkWidget *severity_label = gtk_label_new(severity);
+    GtkWidget *outcome_label = gtk_label_new(outcome);
     GtkWidget *rule_label = gtk_label_new(view->alert.rule_id);
     GtkWidget *timestamp;
     GtkWidget *explanation = new_wrapping_label(view->alert.explanation);
     GtkWidget *process;
-    GtkWidget *expander = gtk_expander_new("Evidence details");
+    GtkWidget *expander = gtk_expander_new("Process details");
     GtkWidget *details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GDateTime *date = g_date_time_new_from_unix_local(view->alert.timestamp_utc);
     char *time_text = date == NULL ? g_strdup("Time unavailable") :
         g_date_time_format(date, "%x · %X");
     char process_text[256];
+    char user_text[MS_USERNAME_BYTES + 64U];
+    char parent_text[MS_PATH_BYTES + 64U];
+    char target_pid[32];
     char accessible_name[256];
 
     snprintf(process_text, sizeof process_text, "%s · PID %d", view->alert.comm, view->alert.pid);
@@ -164,33 +198,119 @@ create_alert_row(struct alert_view *view)
     add_class(severity_icon, "memspy-alert-icon");
     atk_object_set_role(gtk_widget_get_accessible(severity_icon), ATK_ROLE_REDUNDANT_OBJECT);
     add_class(severity_label, "memspy-severity");
+    add_class(outcome_label, "memspy-outcome");
+    add_class(outcome_label, blocked ? "memspy-outcome-blocked" : "memspy-outcome-detected");
     add_class(rule_label, "memspy-rule-id");
     gtk_label_set_xalign(GTK_LABEL(severity_label), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(outcome_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(rule_label), 0.0F);
     gtk_box_pack_start(GTK_BOX(heading), severity_icon, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), severity_label, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(heading), outcome_label, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), rule_label, true, true, 0);
     gtk_box_pack_end(GTK_BOX(heading), timestamp, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), explanation, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), process, false, false, 0);
 
-    gtk_box_pack_start(GTK_BOX(details), new_detail_field("Executable",
-        view->alert.exe[0] == '\0' ? "Unavailable" : view->alert.exe, true), false, false, 0);
-    gtk_box_pack_start(GTK_BOX(details), new_detail_field("Command line",
-        view->alert.cmdline[0] == '\0' ? "Unavailable" : view->alert.cmdline, true), false, false, 0);
-    gtk_box_pack_start(GTK_BOX(details), new_detail_field("Detection signal",
-        view->alert.evidence, false), false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Identity"), false, false, 0);
+    if (view->alert.username[0] != '\0')
+        snprintf(user_text, sizeof user_text, "%s · UID %u", view->alert.username,
+                 (unsigned int)view->alert.uid);
+    else
+        snprintf(user_text, sizeof user_text, "UID %u", (unsigned int)view->alert.uid);
+    add_detail_field(details, "User", user_text, false);
+    add_detail_field(details, "Process", process_text, true);
+    if (view->alert.ppid > 0 || view->alert.parent_exe[0] != '\0') {
+        if (view->alert.parent_exe[0] != '\0' && view->alert.ppid > 0)
+            snprintf(parent_text, sizeof parent_text, "%s · PID %d",
+                     view->alert.parent_exe, view->alert.ppid);
+        else if (view->alert.parent_exe[0] != '\0')
+            snprintf(parent_text, sizeof parent_text, "%s", view->alert.parent_exe);
+        else
+            snprintf(parent_text, sizeof parent_text, "PID %d", view->alert.ppid);
+        add_detail_field(details, "Parent process", parent_text, true);
+    }
+
+    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Execution"), false, false, 0);
+    add_detail_field(details, blocked ? "Attempted executable" : "Executable",
+                     view->alert.exe, true);
+    add_detail_field(details, "Command line", view->alert.cmdline, true);
+    if (blocked)
+        add_detail_field(details, "Launcher executable", view->alert.launcher_exe, true);
+
+    if (view->alert.target_pid > 0 || view->alert.target_exe[0] != '\0') {
+        gtk_box_pack_start(GTK_BOX(details), new_detail_section("Target"), false, false, 0);
+        if (view->alert.target_pid > 0) {
+            snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
+            add_detail_field(details, "Target PID", target_pid, true);
+        }
+        add_detail_field(details, "Target executable", view->alert.target_exe, true);
+    }
+
+    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Detection"), false, false, 0);
+    add_detail_field(details, "Outcome", outcome, false);
+    add_detail_field(details, "Rule", view->alert.rule_id, true);
+    add_detail_field(details, "Detection signal", view->alert.evidence, false);
+    if (view->alert.arguments_truncated)
+        add_detail_field(details, "Arguments truncated",
+                         "Yes — captured command line is incomplete", false);
+    if (view->alert.enrichment_incomplete)
+        add_detail_field(details, "Evidence completeness",
+                         "Some process details were unavailable", false);
     gtk_container_add(GTK_CONTAINER(expander), details);
     gtk_box_pack_start(GTK_BOX(content), expander, false, false, 0);
     gtk_container_add(GTK_CONTAINER(row), content);
     add_class(row, "memspy-alert-row");
     add_class(row, view->alert.severity == MS_SEVERITY_HIGH ?
               "memspy-health-high" : "memspy-health-medium");
-    snprintf(accessible_name, sizeof accessible_name, "%s alert, %s, process %s",
-             severity, view->alert.rule_id, view->alert.comm);
+    snprintf(accessible_name, sizeof accessible_name, "%s %s alert, %s, process %s",
+             outcome, severity, view->alert.rule_id, view->alert.comm);
     atk_object_set_name(gtk_widget_get_accessible(row), accessible_name);
     return row;
+}
+
+static void
+update_response_control(struct ms_window *window)
+{
+    char text[384];
+    char accessible_name[416];
+    const char *name;
+
+    if (window->response_pending)
+        name = "Pending — Waiting for administrator authentication";
+    else if (!window->response_connected)
+        name = "Unavailable — Detector is disconnected";
+    else if (!window->response_supported) {
+        snprintf(text, sizeof text, "Unavailable — %s",
+                 window->response_reason[0] == '\0' ?
+                 "Response mode is not supported" : window->response_reason);
+        name = text;
+    } else if (window->response_active)
+        name = "On — Blocking memfd execution";
+    else
+        name = "Off — Detection only";
+
+    gtk_label_set_text(GTK_LABEL(window->response_label), name);
+    window->setting_response = true;
+    gtk_switch_set_active(GTK_SWITCH(window->response_switch), window->response_active);
+    window->setting_response = false;
+    gtk_widget_set_sensitive(window->response_switch,
+                             window->response_connected && window->response_supported &&
+                             !window->response_pending);
+    snprintf(accessible_name, sizeof accessible_name, "Response mode: %s", name);
+    atk_object_set_name(gtk_widget_get_accessible(window->response_switch), accessible_name);
+}
+
+static void
+response_toggled(GObject *object, GParamSpec *parameter, gpointer userdata)
+{
+    struct ms_window *window = userdata;
+
+    (void)parameter;
+    if (!window->setting_response && window->response_handler != NULL)
+        window->response_handler(gtk_switch_get_active(GTK_SWITCH(object)),
+                                 window->response_userdata);
 }
 
 static GtkWidget *
@@ -226,6 +346,9 @@ ms_window_new(GtkApplication *application)
     GtkWidget *placeholder_icon = gtk_image_new_from_icon_name("security-high-symbolic",
                                                                GTK_ICON_SIZE_DIALOG);
     GtkWidget *header = gtk_header_bar_new();
+    GtkWidget *detector_row;
+    GtkWidget *response_row;
+    GtkWidget *response_box;
 
     window->window = application == NULL ? gtk_window_new(GTK_WINDOW_TOPLEVEL) :
         gtk_application_window_new(application);
@@ -243,7 +366,9 @@ ms_window_new(GtkApplication *application)
     atk_object_set_name(gtk_widget_get_accessible(window->window), "Fileless malware alerts");
     add_class(window->window, "memspy-window");
 
-    window->status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    window->status_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    detector_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    response_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     window->status_icon = gtk_image_new_from_icon_name("memspy-offline-symbolic",
                                                        GTK_ICON_SIZE_BUTTON);
     add_class(window->status_icon, "memspy-state-icon");
@@ -258,9 +383,32 @@ ms_window_new(GtkApplication *application)
     add_class(window->status_detail, "memspy-status-detail");
     gtk_box_pack_start(GTK_BOX(status_copy), window->status_label, false, false, 0);
     gtk_box_pack_start(GTK_BOX(status_copy), window->status_detail, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(window->status_box), window->status_icon, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(window->status_box), window->spinner, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(window->status_box), status_copy, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(detector_row), window->status_icon, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(detector_row), window->spinner, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(detector_row), status_copy, true, true, 0);
+    response_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
+    GtkWidget *response_title = gtk_label_new("Response mode");
+    window->response_label = gtk_label_new("");
+    window->response_error = gtk_label_new("");
+    window->response_switch = gtk_switch_new();
+    gtk_label_set_xalign(GTK_LABEL(response_title), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(window->response_label), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(window->response_error), 0.0F);
+    gtk_label_set_line_wrap(GTK_LABEL(window->response_label), true);
+    gtk_label_set_line_wrap(GTK_LABEL(window->response_error), true);
+    gtk_widget_set_size_request(window->response_error, -1, 34);
+    add_class(response_title, "memspy-response-title");
+    add_class(window->response_label, "memspy-response-state");
+    add_class(window->response_error, "memspy-response-error");
+    gtk_box_pack_start(GTK_BOX(response_box), response_title, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(response_box), window->response_label, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(response_box), window->response_error, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(response_row), response_box, true, true, 0);
+    gtk_box_pack_end(GTK_BOX(response_row), window->response_switch, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(window->status_box), detector_row, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(window->status_box), response_row, false, false, 0);
+    g_signal_connect(window->response_switch, "notify::active",
+                     G_CALLBACK(response_toggled), window);
     add_class(window->status_box, "memspy-status-banner");
     atk_object_set_name(gtk_widget_get_accessible(window->status_box), "Detector status");
 
@@ -305,6 +453,7 @@ ms_window_set_loading(struct ms_window *window)
     if (window == NULL)
         return;
     window->monitoring = false;
+    window->response_connected = false;
     gtk_label_set_text(GTK_LABEL(window->status_label), "Connecting to detector…");
     gtk_label_set_text(GTK_LABEL(window->status_detail),
                        "Establishing a secure local connection");
@@ -312,6 +461,8 @@ ms_window_set_loading(struct ms_window *window)
                                  GTK_ICON_SIZE_BUTTON);
     gtk_spinner_start(GTK_SPINNER(window->spinner));
     add_class(window->status_box, "memspy-health-offline");
+    gtk_label_set_text(GTK_LABEL(window->response_error), "");
+    update_response_control(window);
     update_empty_state(window);
 }
 
@@ -339,6 +490,12 @@ ms_window_set_health(struct ms_window *window, const struct ms_health *health)
     if (window == NULL || health == NULL)
         return;
     window->monitoring = health->state != MS_HEALTH_FAILED;
+    window->response_connected = true;
+    window->response_supported = health->response_supported;
+    window->response_active = health->response_active;
+    g_strlcpy(window->response_reason, health->response_reason,
+              sizeof window->response_reason);
+    gtk_label_set_text(GTK_LABEL(window->response_error), "");
     if (health->state == MS_HEALTH_HEALTHY && health->protected)
         set_status(window, "Monitoring active", "Kernel probes and alert storage are healthy",
                    "memspy-healthy-symbolic", "memspy-health-healthy");
@@ -348,6 +505,7 @@ ms_window_set_health(struct ms_window *window, const struct ms_health *health)
     else
         set_status(window, "Monitoring degraded", "Detection continues with reduced coverage",
                    "memspy-medium-symbolic", "memspy-health-medium");
+    update_response_control(window);
     update_empty_state(window);
 }
 
@@ -357,10 +515,45 @@ ms_window_set_offline(struct ms_window *window, const char *message, const char 
     if (window == NULL)
         return;
     window->monitoring = false;
+    window->response_connected = false;
     set_status(window, message == NULL ? "Detector unavailable" : message,
                detail == NULL ? "Detection is currently unavailable" : detail,
                "memspy-offline-symbolic", "memspy-health-offline");
+    gtk_label_set_text(GTK_LABEL(window->response_error), "");
+    update_response_control(window);
     update_empty_state(window);
+}
+
+void
+ms_window_set_response_handler(struct ms_window *window,
+                               void (*handler)(bool enabled, void *userdata),
+                               void *userdata)
+{
+    if (window == NULL)
+        return;
+    window->response_handler = handler;
+    window->response_userdata = userdata;
+}
+
+void
+ms_window_set_response_pending(struct ms_window *window, bool pending)
+{
+    if (window == NULL)
+        return;
+    window->response_pending = pending;
+    if (pending)
+        gtk_label_set_text(GTK_LABEL(window->response_error), "");
+    update_response_control(window);
+}
+
+void
+ms_window_set_response_error(struct ms_window *window, const char *message)
+{
+    if (window == NULL)
+        return;
+    window->response_pending = false;
+    gtk_label_set_text(GTK_LABEL(window->response_error), message == NULL ? "" : message);
+    update_response_control(window);
 }
 
 const char *

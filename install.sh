@@ -110,7 +110,7 @@ case "$distribution" in
         apt-get install -y --no-install-recommends \
             build-essential meson ninja-build clang pkg-config linux-tools-common linux-tools-generic \
             libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libgtk-3-dev \
-            libayatana-appindicator3-dev libnotify-dev
+            libayatana-appindicator3-dev libnotify-dev libpolkit-gobject-1-dev policykit-1
         if [ "$desktop_environment" = gnome ]; then
             apt-get install -y --no-install-recommends gnome-shell-extension-appindicator
         fi
@@ -131,7 +131,7 @@ case "$distribution" in
         apt-get install -y --no-install-recommends \
             build-essential meson ninja-build clang pkg-config bpftool \
             libbpf-dev libglib2.0-dev libjson-c-dev libsqlite3-dev libgtk-3-dev \
-            libayatana-appindicator3-dev libnotify-dev
+            libayatana-appindicator3-dev libnotify-dev libpolkit-gobject-1-dev policykit-1
         if [ "$desktop_environment" = gnome ]; then
             apt-get install -y --no-install-recommends gnome-shell-extension-appindicator
         fi
@@ -139,14 +139,14 @@ case "$distribution" in
     fedora)
         dnf install -y gcc meson ninja-build clang pkgconf-pkg-config bpftool \
             libbpf-devel glib2-devel json-c-devel sqlite-devel gtk3-devel \
-            libayatana-appindicator-gtk3-devel libnotify-devel
+            libayatana-appindicator-gtk3-devel libnotify-devel polkit-devel
         if [ "$desktop_environment" = gnome ]; then
             dnf install -y gnome-shell-extension-appindicator
         fi
         ;;
     arch)
         pacman -S --needed --noconfirm base-devel meson ninja clang pkgconf bpf \
-            libbpf glib2 json-c sqlite gtk3 libayatana-appindicator libnotify
+            libbpf glib2 json-c sqlite gtk3 libayatana-appindicator libnotify polkit
         if [ "$desktop_environment" = gnome ]; then
             pacman -S --needed --noconfirm gnome-shell-extension-appindicator
         fi
@@ -164,23 +164,34 @@ fi
 "$script_dir/packaging/common/migrate-legacy.sh"
 
 saved_allowlist=$(mktemp)
+saved_response_allowlist=$(mktemp)
 had_allowlist=false
+had_response_allowlist=false
 restore_allowlist()
 {
     if [ "$had_allowlist" = true ]; then
         install -m 0644 -o root -g root "$saved_allowlist" /etc/memspy/allowlist.conf
         had_allowlist=false
     fi
+    if [ "$had_response_allowlist" = true ]; then
+        install -m 0644 -o root -g root "$saved_response_allowlist" \
+            /etc/memspy/response-allowlist.conf
+        had_response_allowlist=false
+    fi
 }
 cleanup()
 {
     restore_allowlist
-    rm -f "$saved_allowlist"
+    rm -f "$saved_allowlist" "$saved_response_allowlist"
 }
 trap cleanup EXIT
 if [ -f /etc/memspy/allowlist.conf ]; then
     cp /etc/memspy/allowlist.conf "$saved_allowlist"
     had_allowlist=true
+fi
+if [ -f /etc/memspy/response-allowlist.conf ]; then
+    cp /etc/memspy/response-allowlist.conf "$saved_response_allowlist"
+    had_response_allowlist=true
 fi
 
 if [ -f "$build_dir/meson-private/coredata.dat" ]; then
@@ -195,8 +206,14 @@ meson test -C "$build_dir" --no-suite privileged --print-errorlogs
 meson install -C "$build_dir"
 
 restore_allowlist
+if "$build_dir/memspyd" --check-response; then
+    install -d -m 0700 -o root -g root /sys/fs/bpf/memspy
+else
+    probe_status=$?
+    test "$probe_status" -eq 3 || fail "response support probe failed unexpectedly"
+fi
 systemd-sysusers /usr/lib/sysusers.d/memspyd.conf
-systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf
+systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf || true
 usermod -aG memspy-ui -- "$desktop_user"
 systemctl daemon-reload
 systemctl enable --now memspyd

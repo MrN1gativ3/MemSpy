@@ -14,6 +14,8 @@
 #include <sys/un.h>
 #include <unistd.h>
 
+#include "authorizer.h"
+
 #define MS_API_MAX_SESSIONS 64U
 #define MS_API_REQUEST_TIMEOUT_MS 5000
 
@@ -22,6 +24,7 @@ struct ms_session {
     int descriptor;
     GMutex write_mutex;
     bool subscribed;
+    struct ms_peer_identity peer;
 };
 
 struct ms_api {
@@ -33,6 +36,7 @@ struct ms_api {
     GThread *accept_thread;
     GMutex mutex;
     GCond workers_done;
+    GMutex response_mutex;
     GPtrArray *sessions;
     bool stopping;
     bool owns_socket;
@@ -173,26 +177,81 @@ request_version(json_object *request, int *version)
     return true;
 }
 
+static json_object *
+health_json(const struct ms_health *health)
+{
+    json_object *object = json_object_new_object();
+    json_object_object_add(object, "state", json_object_new_int(health->state));
+    json_object_object_add(object, "protected", json_object_new_boolean(health->protected));
+    json_object_object_add(object, "lost_events", json_object_new_uint64(health->lost_events));
+    json_object_object_add(object, "map_pressure", json_object_new_uint64(health->map_pressure));
+    json_object_object_add(object, "dropped_alerts", json_object_new_uint64(health->dropped_alerts));
+    json_object_object_add(object, "storage_available", json_object_new_boolean(health->storage_available));
+    json_object_object_add(object, "response_supported", json_object_new_boolean(health->response_supported));
+    json_object_object_add(object, "response_requested", json_object_new_boolean(health->response_requested));
+    json_object_object_add(object, "response_active", json_object_new_boolean(health->response_active));
+    json_object_object_add(object, "blocked_execs", json_object_new_uint64(health->blocked_execs));
+    json_object_object_add(object, "lost_block_events", json_object_new_uint64(health->lost_block_events));
+    json_object_object_add(object, "response_reason", json_object_new_string(health->response_reason));
+    json_object_object_add(object, "message", json_object_new_string(health->message));
+    return object;
+}
+
 static void
 handle_status(struct ms_session *session)
 {
     json_object *reply = json_object_new_object();
-    json_object *health = json_object_new_object();
     struct ms_health snapshot;
 
     g_mutex_lock(&session->api->mutex);
     snapshot = session->api->health;
     g_mutex_unlock(&session->api->mutex);
-    json_object_object_add(health, "state", json_object_new_int(snapshot.state));
-    json_object_object_add(health, "protected", json_object_new_boolean(snapshot.protected));
-    json_object_object_add(health, "lost_events", json_object_new_uint64(snapshot.lost_events));
-    json_object_object_add(health, "map_pressure", json_object_new_uint64(snapshot.map_pressure));
-    json_object_object_add(health, "dropped_alerts", json_object_new_uint64(snapshot.dropped_alerts));
-    json_object_object_add(health, "storage_available", json_object_new_boolean(snapshot.storage_available));
-    json_object_object_add(health, "message", json_object_new_string(snapshot.message));
     json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(reply, "ok", json_object_new_boolean(true));
-    json_object_object_add(reply, "health", health);
+    json_object_object_add(reply, "health", health_json(&snapshot));
+    session_send_json(session, reply);
+    json_object_put(reply);
+}
+
+static void
+handle_set_response(struct ms_session *session, json_object *request)
+{
+    json_object *field;
+    json_object *reply;
+    struct ms_error error = {0};
+    struct ms_health snapshot;
+    bool enabled;
+    bool success = false;
+
+    if (!json_object_object_get_ex(request, "enabled", &field) ||
+        json_object_get_type(field) != json_type_boolean) {
+        send_error(session->descriptor, "invalid_request");
+        return;
+    }
+    enabled = json_object_get_boolean(field);
+    g_mutex_lock(&session->api->response_mutex);
+    if (session->api->callbacks.authorize_response == NULL) {
+        set_error(&error, "authorization_unavailable", "authorization is unavailable");
+    } else if (session->api->callbacks.authorize_response(
+                   &session->peer, session->api->callbacks.userdata, &error) &&
+               session->api->callbacks.set_response != NULL &&
+               session->api->callbacks.set_response(
+                   &session->peer, enabled, session->api->callbacks.userdata, &error)) {
+        g_mutex_lock(&session->api->mutex);
+        snapshot = session->api->health;
+        g_mutex_unlock(&session->api->mutex);
+        success = true;
+    }
+    g_mutex_unlock(&session->api->response_mutex);
+    if (!success) {
+        send_error(session->descriptor,
+                   error.code[0] != '\0' ? error.code : "response_failed");
+        return;
+    }
+    reply = json_object_new_object();
+    json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
+    json_object_object_add(reply, "ok", json_object_new_boolean(true));
+    json_object_object_add(reply, "health", health_json(&snapshot));
     session_send_json(session, reply);
     json_object_put(reply);
 }
@@ -302,6 +361,8 @@ client_worker(gpointer data)
             handle_status(session);
         } else if (strcmp(operation, "alerts") == 0) {
             handle_alerts(session, request);
+        } else if (strcmp(operation, "set_response") == 0) {
+            handle_set_response(session, request);
         } else if (strcmp(operation, "subscribe") == 0) {
             json_object *reply = json_object_new_object();
             json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
@@ -376,6 +437,10 @@ ms_api_accept_fd(struct ms_api *api, int connected_fd)
     session = g_new0(struct ms_session, 1);
     session->api = api;
     session->descriptor = connected_fd;
+    if (!ms_peer_identity_read(credentials.pid, credentials.uid, &session->peer, NULL)) {
+        g_free(session);
+        return false;
+    }
     g_mutex_init(&session->write_mutex);
     g_mutex_lock(&api->mutex);
     if (api->stopping || api->sessions->len >= MS_API_MAX_SESSIONS) {
@@ -406,6 +471,7 @@ ms_api_new(const char *socket_path, struct ms_store *store,
     api->sessions = g_ptr_array_new();
     g_mutex_init(&api->mutex);
     g_cond_init(&api->workers_done);
+    g_mutex_init(&api->response_mutex);
     if (callbacks != NULL)
         api->callbacks = *callbacks;
     return api;
@@ -484,14 +550,7 @@ ms_api_publish_health(struct ms_api *api, const struct ms_health *health)
     g_mutex_lock(&api->mutex);
     api->health = *health;
     message = json_object_new_object();
-    object = json_object_new_object();
-    json_object_object_add(object, "state", json_object_new_int(health->state));
-    json_object_object_add(object, "protected", json_object_new_boolean(health->protected));
-    json_object_object_add(object, "lost_events", json_object_new_uint64(health->lost_events));
-    json_object_object_add(object, "map_pressure", json_object_new_uint64(health->map_pressure));
-    json_object_object_add(object, "dropped_alerts", json_object_new_uint64(health->dropped_alerts));
-    json_object_object_add(object, "storage_available", json_object_new_boolean(health->storage_available));
-    json_object_object_add(object, "message", json_object_new_string(health->message));
+    object = health_json(health);
     json_object_object_add(message, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(message, "event", json_object_new_string("health"));
     json_object_object_add(message, "health", object);
@@ -552,6 +611,7 @@ ms_api_free(struct ms_api *api)
         unlink(api->socket_path);
     g_ptr_array_free(api->sessions, true);
     g_cond_clear(&api->workers_done);
+    g_mutex_clear(&api->response_mutex);
     g_mutex_clear(&api->mutex);
     g_free(api->socket_path);
     g_free(api);

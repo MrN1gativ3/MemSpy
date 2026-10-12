@@ -34,10 +34,13 @@ struct ms_observation {
     long syscall_result;
     unsigned int flags;
     char comm[MS_COMM_BYTES];
+    char username[MS_USERNAME_BYTES];
     char exe[MS_PATH_BYTES];
     char cmdline[MS_MAX_CMDLINE_BYTES + 1U];
+    char parent_exe[MS_PATH_BYTES];
     char target_exe[MS_PATH_BYTES];
     bool enrichment_incomplete;
+    bool arguments_truncated;
 };
 
 #endif

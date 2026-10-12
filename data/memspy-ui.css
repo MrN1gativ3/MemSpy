@@ -23,13 +23,37 @@
 .memspy-status-title,
 .memspy-empty-title,
 .memspy-detail-label,
+.memspy-detail-section,
+.memspy-response-title,
 .memspy-severity { font-weight: bold; }
 
 .memspy-status-detail,
 .memspy-empty-detail,
-.memspy-timestamp {
+.memspy-timestamp,
+.memspy-response-state,
+.memspy-response-error {
   color: alpha(@theme_fg_color, 0.68);
   font-size: 0.875rem;
+}
+
+.memspy-response-error { color: #C01C28; }
+.memspy-detail-section { margin-top: 6px; }
+
+.memspy-outcome {
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: 0.8rem;
+  font-weight: bold;
+}
+
+.memspy-outcome-detected {
+  color: #3584E4;
+  background-color: alpha(#3584E4, 0.12);
+}
+
+.memspy-outcome-blocked {
+  color: #C01C28;
+  background-color: alpha(#C01C28, 0.12);
 }
 
 .memspy-filters { margin: 2px 0; }

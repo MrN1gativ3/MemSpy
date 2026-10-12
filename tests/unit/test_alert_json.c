@@ -11,19 +11,24 @@ fixture_memfd_alert(void)
         .id = 42,
         .timestamp_utc = 1791676800,
         .observed_boottime_ns = 123456789,
+        .action = MS_ALERT_DETECTED,
         .severity = MS_SEVERITY_HIGH,
         .pid = 1200,
         .ppid = 1100,
         .uid = 1000,
         .target_pid = 0,
         .enrichment_incomplete = false,
+        .arguments_truncated = true,
     };
 
     g_strlcpy(alert.rule_id, "MEMFD_EXEC", sizeof alert.rule_id);
     g_strlcpy(alert.explanation, "Executable image is backed by memfd", sizeof alert.explanation);
     g_strlcpy(alert.comm, "payload", sizeof alert.comm);
+    g_strlcpy(alert.username, "alice", sizeof alert.username);
     g_strlcpy(alert.exe, "/memfd:payload (deleted)", sizeof alert.exe);
     g_strlcpy(alert.cmdline, "payload --run", sizeof alert.cmdline);
+    g_strlcpy(alert.launcher_exe, "/usr/bin/launcher", sizeof alert.launcher_exe);
+    g_strlcpy(alert.parent_exe, "/usr/bin/parent", sizeof alert.parent_exe);
     g_strlcpy(alert.evidence, "execveat fd=4", sizeof alert.evidence);
     return alert;
 }
@@ -39,10 +44,57 @@ test_alert_json_round_trip(void)
     g_assert_nonnull(json);
     g_assert_true(ms_alert_from_json(json, &output, &error));
     g_assert_cmpint(output.id, ==, 42);
+    g_assert_cmpint(output.action, ==, MS_ALERT_DETECTED);
     g_assert_cmpint(output.severity, ==, MS_SEVERITY_HIGH);
     g_assert_cmpstr(output.rule_id, ==, "MEMFD_EXEC");
     g_assert_cmpstr(output.cmdline, ==, "payload --run");
+    g_assert_cmpstr(output.username, ==, "alice");
+    g_assert_cmpstr(output.launcher_exe, ==, "/usr/bin/launcher");
+    g_assert_cmpstr(output.parent_exe, ==, "/usr/bin/parent");
+    g_assert_true(output.arguments_truncated);
     g_assert_cmpuint(strlen(output.cmdline), <=, MS_MAX_CMDLINE_BYTES);
+    json_object_put(json);
+}
+
+static void
+test_alert_json_round_trips_blocked_action(void)
+{
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json;
+
+    input.action = MS_ALERT_BLOCKED;
+    json = ms_alert_to_json(&input);
+    g_assert_nonnull(json);
+    g_assert_true(ms_alert_from_json(json, &output, NULL));
+    g_assert_cmpint(output.action, ==, MS_ALERT_BLOCKED);
+    json_object_put(json);
+}
+
+static void
+test_alert_json_rejects_missing_or_invalid_action(void)
+{
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json = ms_alert_to_json(&input);
+
+    json_object_object_del(json, "action");
+    g_assert_false(ms_alert_from_json(json, &output, NULL));
+    json_object_object_add(json, "action", json_object_new_string("allowed"));
+    g_assert_false(ms_alert_from_json(json, &output, NULL));
+    json_object_put(json);
+}
+
+static void
+test_alert_json_rejects_invalid_username(void)
+{
+    static const char invalid[] = {(char)0xff};
+    struct ms_alert input = fixture_memfd_alert();
+    struct ms_alert output = {0};
+    json_object *json = ms_alert_to_json(&input);
+
+    json_object_object_add(json, "username", json_object_new_string_len(invalid, sizeof invalid));
+    g_assert_false(ms_alert_from_json(json, &output, NULL));
     json_object_put(json);
 }
 
@@ -103,6 +155,9 @@ main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/alert-json/round-trip", test_alert_json_round_trip);
+    g_test_add_func("/alert-json/round-trip-blocked", test_alert_json_round_trips_blocked_action);
+    g_test_add_func("/alert-json/action", test_alert_json_rejects_missing_or_invalid_action);
+    g_test_add_func("/alert-json/invalid-username", test_alert_json_rejects_invalid_username);
     g_test_add_func("/alert-json/missing-field", test_alert_json_rejects_missing_field);
     g_test_add_func("/alert-json/embedded-nul", test_alert_json_rejects_embedded_nul);
     g_test_add_func("/alert-json/overlong-command", test_alert_json_rejects_overlong_command);

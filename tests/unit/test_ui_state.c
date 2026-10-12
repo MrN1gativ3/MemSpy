@@ -106,6 +106,31 @@ test_transient_live_alert(void)
     g_assert_false(ms_ui_state_should_notify(&state, &high));
 }
 
+static void
+test_response_health_is_confirmed_state(void)
+{
+    struct ms_ui_state state;
+    struct ms_health health = {
+        .state = MS_HEALTH_HEALTHY,
+        .protected = true,
+        .response_supported = true,
+        .response_requested = true,
+        .response_active = true,
+        .blocked_execs = 7,
+    };
+
+    ms_ui_state_init(&state);
+    ms_ui_state_apply_health(&state, &health);
+    g_assert_true(state.connected);
+    g_assert_true(state.health.response_supported);
+    g_assert_true(state.health.response_requested);
+    g_assert_true(state.health.response_active);
+    g_assert_cmpuint(state.health.blocked_execs, ==, 7);
+    ms_ui_state_disconnect(&state);
+    g_assert_false(state.connected);
+    g_assert_true(state.health.response_active);
+}
+
 int
 main(int argc, char **argv)
 {
@@ -114,5 +139,6 @@ main(int argc, char **argv)
     g_test_add_func("/ui-state/filter-disconnect", test_read_filter_disconnect_and_duplicates);
     g_test_add_func("/ui-state/persistence", test_state_persistence);
     g_test_add_func("/ui-state/transient-live-alert", test_transient_live_alert);
+    g_test_add_func("/ui-state/response-confirmed-health", test_response_health_is_confirmed_state);
     return g_test_run();
 }
