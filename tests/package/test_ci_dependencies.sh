@@ -8,6 +8,7 @@ printf '%s\n' "$install_block" | grep -qw linux-tools-generic
 printf '%s\n' "$install_block" | grep -qw at-spi2-core
 printf '%s\n' "$install_block" | grep -qw libpolkit-gobject-1-dev
 printf '%s\n' "$install_block" | grep -qw libsystemd-dev
+printf '%s\n' "$install_block" | grep -qw librsvg2-common
 ! printf '%s\n' "$install_block" | grep -qw bpftool
 grep -q 'bpftool version' "$workflow"
 grep -Fq '/usr/lib/linux-tools' "$workflow"
