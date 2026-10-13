@@ -30,6 +30,8 @@ ms_cli_print_status(FILE *stream, const struct ms_health *health, bool json)
         json_object_object_add(object, "map_pressure", json_object_new_uint64(health->map_pressure));
         json_object_object_add(object, "dropped_alerts", json_object_new_uint64(health->dropped_alerts));
         json_object_object_add(object, "blocked_execs", json_object_new_uint64(health->blocked_execs));
+        json_object_object_add(object, "blocked_operations",
+                               json_object_new_uint64(health->blocked_operations));
         json_object_object_add(object, "lost_block_events", json_object_new_uint64(health->lost_block_events));
         json_object_object_add(object, "incomplete_observations", json_object_new_uint64(health->incomplete_observations));
         json_object_object_add(object, "journal_errors", json_object_new_uint64(health->journal_errors));

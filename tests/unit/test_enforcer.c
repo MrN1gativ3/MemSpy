@@ -11,6 +11,7 @@ struct fake_backend {
     bool fail_create;
     bool unrelated_pin;
     uint64_t denied;
+    uint64_t denied_execs;
     uint64_t lost;
     GString *calls;
 };
@@ -114,13 +115,14 @@ fake_set_enabled(void *context, void *instance, bool enabled, struct ms_error *e
 
 static int
 fake_poll(void *context, void *instance, int timeout_ms, uint64_t *denied,
-          uint64_t *lost, struct ms_error *error)
+          uint64_t *denied_execs, uint64_t *lost, struct ms_error *error)
 {
     struct fake_backend *fake = context;
     (void)instance;
     (void)timeout_ms;
     (void)error;
     *denied = fake->denied;
+    *denied_execs = fake->denied_execs;
     *lost = fake->lost;
     return 0;
 }
@@ -214,6 +216,42 @@ test_event_conversion(void)
     g_assert_true(strlen(alert.parent_sha256) == 64U || alert.enrichment_incomplete);
     if (password != NULL)
         g_assert_cmpstr(alert.username, ==, password->pw_name);
+}
+
+static void
+test_all_event_kinds_convert_to_distinct_blocked_rules(void)
+{
+    static const struct {
+        enum ms_enforce_event_kind kind;
+        const char *rule;
+        const char *evidence;
+    } cases[] = {
+        {MS_ENFORCE_BLOCKED_MEMFD_EXEC, "BLOCKED_MEMFD_EXEC",
+         "BPF LSM denied memfd execution"},
+        {MS_ENFORCE_BLOCKED_DELETED_EXEC, "BLOCKED_DELETED_EXEC",
+         "BPF LSM denied deleted-image execution"},
+        {MS_ENFORCE_BLOCKED_PROCESS_VM_WRITE, "BLOCKED_PROCESS_VM_WRITE",
+         "BPF LSM denied process_vm_writev"},
+        {MS_ENFORCE_BLOCKED_PTRACE_ACCESS, "BLOCKED_PTRACE_ACCESS",
+         "BPF LSM denied ptrace admission"},
+        {MS_ENFORCE_BLOCKED_PROC_MEM_WRITE, "BLOCKED_PROC_MEM_WRITE",
+         "BPF LSM denied /proc/<pid>/mem write"},
+    };
+
+    for (size_t index = 0; index < G_N_ELEMENTS(cases); ++index) {
+        struct ms_enforce_event event = valid_event();
+        struct ms_alert alert;
+        struct ms_error error = {0};
+
+        event.kind = cases[index].kind;
+        if (event.kind >= MS_ENFORCE_BLOCKED_PROCESS_VM_WRITE)
+            event.target_pid = 42;
+        g_assert_true(ms_enforcer_alert_from_event(&event, &alert, &error));
+        g_assert_cmpstr(alert.rule_id, ==, cases[index].rule);
+        g_assert_cmpstr(alert.evidence, ==, cases[index].evidence);
+        g_assert_cmpint(alert.action, ==, MS_ALERT_BLOCKED);
+        g_assert_cmpint(alert.target_pid, ==, event.target_pid);
+    }
 }
 
 static void
@@ -312,10 +350,12 @@ test_poll_updates_counters(void)
 
     g_assert_true(ms_enforcer_attach(enforcer, NULL, false, &error));
     fake.denied = 7;
+    fake.denied_execs = 2;
     fake.lost = 3;
     g_assert_cmpint(ms_enforcer_poll(enforcer, 0, &error), ==, 0);
     ms_enforcer_status(enforcer, &status);
     g_assert_cmpuint(status.denied, ==, 7);
+    g_assert_cmpuint(status.denied_execs, ==, 2);
     g_assert_cmpuint(status.lost_events, ==, 3);
     g_assert_true(ms_enforcer_set_enabled(enforcer, true, &error));
     ms_enforcer_status(enforcer, &status);
@@ -355,6 +395,8 @@ main(int argc, char **argv)
 {
     g_test_init(&argc, &argv, NULL);
     g_test_add_func("/enforcer/event-conversion", test_event_conversion);
+    g_test_add_func("/enforcer/all-event-kinds",
+                    test_all_event_kinds_convert_to_distinct_blocked_rules);
     g_test_add_func("/enforcer/event-validation", test_event_validation);
     g_test_add_func("/enforcer/unsupported", test_unsupported_is_not_fatal);
     g_test_add_func("/enforcer/adopt", test_adopts_compatible_pins);

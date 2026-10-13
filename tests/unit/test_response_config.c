@@ -161,6 +161,83 @@ test_allowlist_keeps_only_valid_unique_launchers(struct fixture *fixture, gconst
     g_unlink(valid);
 }
 
+static bool
+has_key(const GArray *keys, enum ms_response_rule rule, const struct stat *metadata)
+{
+    for (guint index = 0; index < keys->len; ++index) {
+        const struct ms_allowlist_key *key =
+            &g_array_index(keys, struct ms_allowlist_key, index);
+
+        if (key->rule == (__u32)rule && key->device == (__u64)metadata->st_dev &&
+            key->inode == (__u64)metadata->st_ino)
+            return true;
+    }
+    return false;
+}
+
+static void
+test_allowlist_scopes_multiple_processes_by_rule(struct fixture *fixture,
+                                                 gconstpointer data)
+{
+    g_autofree char *first = g_build_filename(fixture->directory, "first", NULL);
+    g_autofree char *second = g_build_filename(fixture->directory, "second", NULL);
+    g_autofree char *contents = NULL;
+    struct stat first_metadata;
+    struct stat second_metadata;
+    GArray *keys = NULL;
+    size_t rejected = 0;
+    struct ms_error warning = {0};
+
+    (void)data;
+    write_secure(first, "fixture", 0700);
+    write_secure(second, "fixture", 0700);
+    g_assert_cmpint(g_stat(first, &first_metadata), ==, 0);
+    g_assert_cmpint(g_stat(second, &second_metadata), ==, 0);
+    contents = g_strdup_printf(
+        "MEMFD_EXEC %s\nMEMFD_EXEC %s\nPTRACE_WRITE %s\n"
+        "PROCESS_VM_WRITE %s\nPROC_MEM_WRITE %s\nDELETED_EXEC %s\n%s\n",
+        first, second, first, first, second, second, first);
+    write_secure(fixture->allowlist_path, contents, 0600);
+
+    g_assert_true(ms_response_allowlist_load(fixture->allowlist_path, &keys,
+                                             &rejected, &warning));
+    g_assert_cmpuint(rejected, ==, 0);
+    g_assert_cmpuint(keys->len, ==, 6);
+    g_assert_true(has_key(keys, MS_RESPONSE_MEMFD_EXEC, &first_metadata));
+    g_assert_true(has_key(keys, MS_RESPONSE_MEMFD_EXEC, &second_metadata));
+    g_assert_true(has_key(keys, MS_RESPONSE_PTRACE_WRITE, &first_metadata));
+    g_assert_true(has_key(keys, MS_RESPONSE_PROCESS_VM_WRITE, &first_metadata));
+    g_assert_true(has_key(keys, MS_RESPONSE_PROC_MEM_WRITE, &second_metadata));
+    g_assert_true(has_key(keys, MS_RESPONSE_DELETED_EXEC, &second_metadata));
+    g_array_free(keys, true);
+    g_unlink(second);
+    g_unlink(first);
+}
+
+static void
+test_allowlist_rejects_unknown_and_malformed_rules(struct fixture *fixture,
+                                                   gconstpointer data)
+{
+    g_autofree char *valid = g_build_filename(fixture->directory, "valid", NULL);
+    g_autofree char *contents = NULL;
+    GArray *keys = NULL;
+    size_t rejected = 0;
+    struct ms_error warning = {0};
+
+    (void)data;
+    write_secure(valid, "fixture", 0700);
+    contents = g_strdup_printf("UNKNOWN %s\nMEMFD_EXEC\nMEMFD_EXEC relative\n"
+                               "MEMFD_EXEC %s extra\n", valid, valid);
+    write_secure(fixture->allowlist_path, contents, 0600);
+    g_assert_true(ms_response_allowlist_load(fixture->allowlist_path, &keys,
+                                             &rejected, &warning));
+    g_assert_cmpuint(keys->len, ==, 0);
+    g_assert_cmpuint(rejected, ==, 4);
+    g_assert_cmpstr(warning.code, ==, "response_allowlist_entries");
+    g_array_free(keys, true);
+    g_unlink(valid);
+}
+
 static void
 test_allowlist_bounds_input(struct fixture *fixture, gconstpointer data)
 {
@@ -196,6 +273,10 @@ main(int argc, char **argv)
                test_state_failed_store_preserves_previous, fixture_teardown);
     g_test_add("/response-config/allowlist-filter", struct fixture, NULL, fixture_setup,
                test_allowlist_keeps_only_valid_unique_launchers, fixture_teardown);
+    g_test_add("/response-config/allowlist-rules", struct fixture, NULL, fixture_setup,
+               test_allowlist_scopes_multiple_processes_by_rule, fixture_teardown);
+    g_test_add("/response-config/allowlist-malformed", struct fixture, NULL, fixture_setup,
+               test_allowlist_rejects_unknown_and_malformed_rules, fixture_teardown);
     g_test_add("/response-config/allowlist-bound", struct fixture, NULL, fixture_setup,
                test_allowlist_bounds_input, fixture_teardown);
     return g_test_run();

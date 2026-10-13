@@ -21,6 +21,7 @@ struct ms_health {
     bool response_requested;
     bool response_active;
     uint64_t blocked_execs;
+    uint64_t blocked_operations;
     uint64_t lost_block_events;
     uint64_t incomplete_observations;
     uint64_t journal_errors;

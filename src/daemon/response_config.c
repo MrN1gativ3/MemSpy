@@ -185,13 +185,37 @@ trim(char *text)
 }
 
 static bool
-key_exists(const GArray *keys, const struct ms_launcher_key *candidate)
+key_exists(const GArray *keys, const struct ms_allowlist_key *candidate)
 {
     for (guint index = 0; index < keys->len; ++index) {
-        const struct ms_launcher_key *key = &g_array_index(keys, struct ms_launcher_key, index);
-        if (key->device == candidate->device && key->inode == candidate->inode)
+        const struct ms_allowlist_key *key =
+            &g_array_index(keys, struct ms_allowlist_key, index);
+        if (key->rule == candidate->rule && key->device == candidate->device &&
+            key->inode == candidate->inode)
             return true;
     }
+    return false;
+}
+
+static bool
+parse_rule(const char *name, enum ms_response_rule *rule)
+{
+    static const struct {
+        const char *name;
+        enum ms_response_rule rule;
+    } rules[] = {
+        {"MEMFD_EXEC", MS_RESPONSE_MEMFD_EXEC},
+        {"DELETED_EXEC", MS_RESPONSE_DELETED_EXEC},
+        {"PROCESS_VM_WRITE", MS_RESPONSE_PROCESS_VM_WRITE},
+        {"PTRACE_WRITE", MS_RESPONSE_PTRACE_WRITE},
+        {"PROC_MEM_WRITE", MS_RESPONSE_PROC_MEM_WRITE},
+    };
+
+    for (size_t index = 0; index < G_N_ELEMENTS(rules); ++index)
+        if (strcmp(name, rules[index].name) == 0) {
+            *rule = rules[index].rule;
+            return true;
+        }
     return false;
 }
 
@@ -225,11 +249,13 @@ ms_response_allowlist_load(const char *path, GArray **keys, size_t *rejected,
         close(descriptor);
         return false;
     }
-    loaded = g_array_new(false, false, sizeof(struct ms_launcher_key));
+    loaded = g_array_new(false, false, sizeof(struct ms_allowlist_key));
     while (fgets(line, sizeof line, file) != NULL) {
+        g_autofree char *canonical = NULL;
         struct stat metadata;
-        struct ms_launcher_key key;
+        struct ms_allowlist_key key = {0};
         char *entry;
+        char *path;
         bool overlong = strchr(line, '\n') == NULL && !feof(file);
 
         ++entries;
@@ -241,16 +267,36 @@ ms_response_allowlist_load(const char *path, GArray **keys, size_t *rejected,
         entry = trim(line);
         if (*entry == '\0' || *entry == '#')
             continue;
-        if (entries > MS_RESPONSE_MAX_LAUNCHERS || overlong || entry[0] != '/' ||
-            lstat(entry, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+        if (entry[0] == '/') {
+            key.rule = MS_RESPONSE_MEMFD_EXEC;
+            path = entry;
+        } else {
+            char *separator = entry;
+
+            while (*separator != '\0' && !g_ascii_isspace(*separator))
+                ++separator;
+            if (*separator == '\0') {
+                ++rejected_count;
+                continue;
+            }
+            *separator++ = '\0';
+            path = trim(separator);
+            if (!parse_rule(entry, (enum ms_response_rule *)&key.rule)) {
+                ++rejected_count;
+                continue;
+            }
+        }
+        canonical = realpath(path, NULL);
+        if (entries > MS_RESPONSE_MAX_LAUNCHERS || overlong || path[0] != '/' ||
+            canonical == NULL || strcmp(canonical, path) != 0 ||
+            lstat(path, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
+            metadata.st_uid != geteuid() || (metadata.st_mode & 0022U) != 0 ||
             (metadata.st_mode & 0111U) == 0) {
             ++rejected_count;
             continue;
         }
-        key = (struct ms_launcher_key){
-            .device = (__u64)metadata.st_dev,
-            .inode = (__u64)metadata.st_ino,
-        };
+        key.device = (__u64)metadata.st_dev;
+        key.inode = (__u64)metadata.st_ino;
         if (!key_exists(loaded, &key))
             g_array_append_val(loaded, key);
     }

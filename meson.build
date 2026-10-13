@@ -92,6 +92,7 @@ daemon_sources = [
   'src/daemon/sensor.c',
   'src/daemon/enforcer.c',
   'src/daemon/process_evidence.c',
+  'src/daemon/ptrace_barrier.c',
   'src/daemon/response_config.c',
   'src/daemon/authorizer.c',
   'src/daemon/journal.c',

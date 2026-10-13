@@ -191,6 +191,8 @@ health_json(const struct ms_health *health)
     json_object_object_add(object, "response_requested", json_object_new_boolean(health->response_requested));
     json_object_object_add(object, "response_active", json_object_new_boolean(health->response_active));
     json_object_object_add(object, "blocked_execs", json_object_new_uint64(health->blocked_execs));
+    json_object_object_add(object, "blocked_operations",
+                           json_object_new_uint64(health->blocked_operations));
     json_object_object_add(object, "lost_block_events", json_object_new_uint64(health->lost_block_events));
     json_object_object_add(object, "incomplete_observations",
                            json_object_new_uint64(health->incomplete_observations));

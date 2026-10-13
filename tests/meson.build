@@ -130,6 +130,16 @@ process_evidence_test = executable(
 
 test('process-evidence', process_evidence_test)
 
+ptrace_barrier_test = executable(
+  'test-ptrace-barrier',
+  'unit/test_ptrace_barrier.c',
+  '../src/daemon/ptrace_barrier.c',
+  include_directories: [inc, daemon_inc, include_directories('../src/bpf')],
+  dependencies: [glib_dep],
+)
+
+test('ptrace-barrier', ptrace_barrier_test)
+
 daemon_test = executable(
   'test-daemon',
   'unit/test_daemon.c',
@@ -142,6 +152,7 @@ daemon_test = executable(
   '../src/daemon/sensor.c',
   '../src/daemon/enforcer.c',
   '../src/daemon/process_evidence.c',
+  '../src/daemon/ptrace_barrier.c',
   '../src/daemon/response_config.c',
   '../src/daemon/authorizer.c',
   '../src/daemon/journal.c',

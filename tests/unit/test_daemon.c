@@ -20,6 +20,7 @@ struct fake_io {
     bool fail_state_store;
     size_t rejected_launchers;
     uint64_t blocked_execs;
+    uint64_t blocked_operations;
     uint64_t lost_block_events;
     bool fail_journal;
     size_t journaled;
@@ -116,7 +117,7 @@ fake_response_allowlist(void *userdata, const char *path, GArray **keys,
 {
     struct fake_io *io = userdata;
     (void)path;
-    *keys = g_array_new(false, false, sizeof(struct ms_launcher_key));
+    *keys = g_array_new(false, false, sizeof(struct ms_allowlist_key));
     *rejected = io->rejected_launchers;
     if (*rejected > 0)
         g_strlcpy(warning->message, "unsafe launcher entry ignored", sizeof warning->message);
@@ -161,6 +162,7 @@ fake_response_poll(void *userdata, int timeout_ms, struct ms_enforcer_status *st
         .supported = io->response_supported,
         .enabled = io->response_active,
         .denied = io->blocked_execs,
+        .denied_execs = io->blocked_operations,
         .lost_events = io->lost_block_events,
     };
     return 0;
@@ -470,6 +472,7 @@ test_response_transition_rolls_back_on_persistence_failure(void)
     io.persisted_enabled = true;
     io.response_active = false;
     app = new_response_app(&io, allowlist);
+    g_array_set_size(io.response_changes, 0);
     g_assert_false(ms_app_set_response(app, false, &error));
     g_assert_true(io.response_active);
     g_assert_true(ms_app_health(app)->response_requested);
@@ -513,9 +516,11 @@ test_blocked_alert_and_response_counters(void)
     g_assert_false(ms_app_health(app)->storage_available);
     g_assert_true(ms_app_health(app)->response_active);
     io.blocked_execs = 9;
+    io.blocked_operations = 2;
     io.lost_block_events = 2;
     ms_app_maintain(app, 0);
-    g_assert_cmpuint(ms_app_health(app)->blocked_execs, ==, 9);
+    g_assert_cmpuint(ms_app_health(app)->blocked_execs, ==, 2);
+    g_assert_cmpuint(ms_app_health(app)->blocked_operations, ==, 9);
     g_assert_cmpuint(ms_app_health(app)->lost_block_events, ==, 2);
     g_assert_true(ms_app_health(app)->response_active);
     ms_app_free(app);

@@ -16,6 +16,7 @@ struct ms_enforcer_status {
     bool supported;
     bool enabled;
     uint64_t denied;
+    uint64_t denied_execs;
     uint64_t lost_events;
     char reason[256];
 };
@@ -45,7 +46,8 @@ struct ms_enforcer_ops {
     bool (*set_enabled)(void *context, void *instance, bool enabled,
                         struct ms_error *error);
     int (*poll)(void *context, void *instance, int timeout_ms, uint64_t *denied,
-                uint64_t *lost_events, struct ms_error *error);
+                uint64_t *denied_execs, uint64_t *lost_events,
+                struct ms_error *error);
     void (*release)(void *context, void *instance);
 };
 

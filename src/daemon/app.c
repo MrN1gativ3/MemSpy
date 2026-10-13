@@ -11,6 +11,7 @@
 #include "enforcer.h"
 #include "journal.h"
 #include "policy.h"
+#include "ptrace_barrier.h"
 #include "response_config.h"
 #include "sensor.h"
 #include "store.h"
@@ -25,6 +26,7 @@ struct ms_app {
     struct ms_authorizer *authorizer;
     char *database_path;
     char *response_state_path;
+    GArray *response_allowlist;
     struct ms_app_dependencies dependencies;
     struct ms_health health;
     struct ms_alert *queue;
@@ -108,6 +110,16 @@ response_set_enabled(struct ms_app *app, bool enabled, struct ms_error *error)
         return app->dependencies.response_set_enabled(app->dependencies.userdata,
                                                       enabled, error);
     return ms_enforcer_set_enabled(app->enforcer, enabled, error);
+}
+
+static bool
+response_barrier_check(struct ms_app *app, struct ms_error *error)
+{
+    if (app->injected)
+        return app->dependencies.response_barrier_check == NULL ||
+               app->dependencies.response_barrier_check(app->dependencies.userdata,
+                                                         app->response_allowlist, error);
+    return ms_ptrace_barrier_check("/proc", app->response_allowlist, error);
 }
 
 static int
@@ -297,7 +309,7 @@ initialize_response(struct ms_app *app, const struct ms_app_config *config)
     }
     if (!response_allowlist_load(app, config->response_allowlist_path, &keys, &rejected,
                                  &allowlist_warning)) {
-        keys = g_array_new(false, false, sizeof(struct ms_launcher_key));
+        keys = g_array_new(false, false, sizeof(struct ms_allowlist_key));
         degrade_response(app, allowlist_warning.message);
     } else if (rejected > 0) {
         degrade_response(app, allowlist_warning.message);
@@ -307,15 +319,31 @@ initialize_response(struct ms_app *app, const struct ms_app_config *config)
                           &operation_error)) {
         status.supported = false;
         g_strlcpy(status.reason, operation_error.message, sizeof status.reason);
-    } else if (!response_attach(app, keys, requested, &status, &operation_error)) {
+    } else if (!response_attach(app, keys, false, &status, &operation_error)) {
         status.supported = false;
         g_strlcpy(status.reason, operation_error.message, sizeof status.reason);
     }
     app->health.response_requested = requested;
     app->health.response_supported = status.supported;
-    app->health.response_active = status.supported && status.enabled;
-    app->health.blocked_execs = status.denied;
+    app->health.response_active = false;
+    app->health.blocked_execs = status.denied_execs;
+    app->health.blocked_operations = status.denied;
     app->health.lost_block_events = status.lost_events;
+    app->response_allowlist = g_array_ref(keys);
+    if (requested && status.supported) {
+        if (!response_set_enabled(app, true, &operation_error) ||
+            !response_barrier_check(app, &operation_error)) {
+            struct ms_error ignored = {0};
+
+            response_set_enabled(app, false, &ignored);
+            response_state_store(app, false, &ignored);
+            app->health.response_requested = false;
+            g_strlcpy(app->health.response_reason, operation_error.message,
+                      sizeof app->health.response_reason);
+        } else {
+            app->health.response_active = true;
+        }
+    }
     if (app->health.response_reason[0] == '\0')
         g_strlcpy(app->health.response_reason, status.reason,
                   sizeof app->health.response_reason);
@@ -334,11 +362,13 @@ ms_app_maintain(struct ms_app *app, int64_t now_utc)
         if (response_poll(app, 0, &status, &error) >= 0) {
             bool changed = app->health.response_supported != status.supported ||
                            app->health.response_active != status.enabled ||
-                           app->health.blocked_execs != status.denied ||
+                           app->health.blocked_execs != status.denied_execs ||
+                           app->health.blocked_operations != status.denied ||
                            app->health.lost_block_events != status.lost_events;
             app->health.response_supported = status.supported;
             app->health.response_active = status.supported && status.enabled;
-            app->health.blocked_execs = status.denied;
+            app->health.blocked_execs = status.denied_execs;
+            app->health.blocked_operations = status.denied;
             app->health.lost_block_events = status.lost_events;
             if (status.reason[0] != '\0')
                 g_strlcpy(app->health.response_reason, status.reason,
@@ -511,6 +541,16 @@ ms_app_set_response(struct ms_app *app, bool enabled, struct ms_error *error)
         g_mutex_unlock(&app->response_lock);
         return false;
     }
+    if (enabled && !response_barrier_check(app, error)) {
+        if (!response_set_enabled(app, previous, &rollback_error))
+            degrade_response(app, "response state rollback failed");
+        app->health.response_active = previous;
+        g_strlcpy(app->health.response_reason, error->message,
+                  sizeof app->health.response_reason);
+        publish_health(app);
+        g_mutex_unlock(&app->response_lock);
+        return false;
+    }
     if (!response_state_store(app, enabled, error)) {
         if (!response_set_enabled(app, previous, &rollback_error))
             degrade_response(app, "response state rollback failed");
@@ -589,6 +629,7 @@ ms_app_free(struct ms_app *app)
         return;
     ms_api_free(app->api);
     ms_authorizer_free(app->authorizer);
+    g_clear_pointer(&app->response_allowlist, g_array_unref);
     ms_enforcer_free(app->enforcer);
     ms_sensor_free(app->sensor);
     ms_store_close(app->store);

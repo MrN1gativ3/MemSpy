@@ -196,6 +196,7 @@ decode_health(json_object *object, struct ms_health *health)
     HEALTH_VALUE("map_pressure", map_pressure);
     HEALTH_VALUE("dropped_alerts", dropped_alerts);
     HEALTH_VALUE("blocked_execs", blocked_execs);
+    HEALTH_VALUE("blocked_operations", blocked_operations);
     HEALTH_VALUE("lost_block_events", lost_block_events);
     HEALTH_VALUE("incomplete_observations", incomplete_observations);
     HEALTH_VALUE("journal_errors", journal_errors);

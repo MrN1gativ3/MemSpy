@@ -21,6 +21,7 @@ enum {
     MAP_ENABLED,
     MAP_ALLOWLIST,
     MAP_PENDING,
+    MAP_PENDING_INJECTION,
     MAP_EVENTS,
     MAP_COUNTERS,
     MAP_SCRATCH,
@@ -30,17 +31,28 @@ enum {
 enum {
     LINK_EXECVE,
     LINK_EXECVEAT,
-    LINK_LSM,
+    LINK_PROCESS_VM_ENTER,
+    LINK_PROCESS_VM_EXIT,
+    LINK_PTRACE_ENTER,
+    LINK_PTRACE_EXIT,
+    LINK_EXEC,
+    LINK_PROCESS_VM,
+    LINK_PTRACE_ACCESS,
+    LINK_PTRACE_TRACEME,
+    LINK_PROC_MEM,
     LINK_COUNT,
 };
 
 static const char *const map_names[MAP_COUNT] = {
-    "response_enabled", "launcher_allowlist", "pending_exec", "enforce_events",
-    "enforce_counters", "enforce_scratch",
+    "response_enabled", "launcher_allowlist", "pending_exec", "pending_injection",
+    "enforce_events", "enforce_counters", "enforce_scratch",
 };
 
 static const char *const link_names[LINK_COUNT] = {
-    "enter_execve", "enter_execveat", "block_memfd_exec",
+    "enter_execve", "enter_execveat", "enforce_enter_process_vm_writev",
+    "enforce_exit_process_vm_writev", "enforce_enter_ptrace", "enforce_exit_ptrace",
+    "block_suspicious_exec", "block_process_vm_write", "block_ptrace_access",
+    "block_ptrace_traceme", "block_proc_mem_write",
 };
 
 struct real_instance {
@@ -140,7 +152,8 @@ valid_event(const struct ms_enforce_event *event, struct ms_error *error)
     size_t argument_bytes = 0;
 
     if (event == NULL || event->abi_version != MS_ENFORCE_EVENT_ABI ||
-        event->kind != MS_ENFORCE_BLOCKED_MEMFD_EXEC) {
+        event->kind < MS_ENFORCE_BLOCKED_MEMFD_EXEC ||
+        event->kind >= MS_ENFORCE_KIND_COUNT) {
         set_error(error, "enforcer_abi", "unsupported enforcement event ABI");
         return false;
     }
@@ -193,10 +206,33 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
         .enrichment_incomplete =
             (event->flags & MS_ENFORCE_FILENAME_TRUNCATED) != 0,
     };
-    g_strlcpy(alert->rule_id, "BLOCKED_MEMFD_EXEC", sizeof alert->rule_id);
-    g_strlcpy(alert->explanation, "MemSpy blocked a memory-backed executable image.",
+    static const struct {
+        const char *rule;
+        const char *explanation;
+        const char *evidence;
+    } descriptions[MS_ENFORCE_KIND_COUNT] = {
+        [MS_ENFORCE_BLOCKED_MEMFD_EXEC] = {
+            "BLOCKED_MEMFD_EXEC", "MemSpy blocked a memory-backed executable image.",
+            "BPF LSM denied memfd execution"},
+        [MS_ENFORCE_BLOCKED_DELETED_EXEC] = {
+            "BLOCKED_DELETED_EXEC", "MemSpy blocked execution of a deleted image.",
+            "BPF LSM denied deleted-image execution"},
+        [MS_ENFORCE_BLOCKED_PROCESS_VM_WRITE] = {
+            "BLOCKED_PROCESS_VM_WRITE", "MemSpy blocked a cross-process memory write.",
+            "BPF LSM denied process_vm_writev"},
+        [MS_ENFORCE_BLOCKED_PTRACE_ACCESS] = {
+            "BLOCKED_PTRACE_ACCESS", "MemSpy blocked a ptrace relationship.",
+            "BPF LSM denied ptrace admission"},
+        [MS_ENFORCE_BLOCKED_PROC_MEM_WRITE] = {
+            "BLOCKED_PROC_MEM_WRITE", "MemSpy blocked a proc memory write.",
+            "BPF LSM denied /proc/<pid>/mem write"},
+    };
+    g_strlcpy(alert->rule_id, descriptions[event->kind].rule, sizeof alert->rule_id);
+    g_strlcpy(alert->explanation, descriptions[event->kind].explanation,
               sizeof alert->explanation);
-    g_strlcpy(alert->evidence, "BPF LSM denied memfd execution", sizeof alert->evidence);
+    g_strlcpy(alert->evidence, descriptions[event->kind].evidence, sizeof alert->evidence);
+    alert->target_pid = (pid_t)event->target_pid;
+    alert->target_namespace_pid = (pid_t)event->target_namespace_pid;
     g_autofree char *valid_comm = g_utf8_make_valid(event->comm, -1);
     g_strlcpy(alert->comm, valid_comm, sizeof alert->comm);
     g_autofree char *valid_filename = g_utf8_make_valid(event->filename,
@@ -260,8 +296,9 @@ map_compatible(int descriptor, size_t index)
         __u32 max_entries;
     } expected[MAP_COUNT] = {
         {BPF_MAP_TYPE_ARRAY, 4, 4, 1},
-        {BPF_MAP_TYPE_HASH, sizeof(struct ms_launcher_key), 1, 4096},
+        {BPF_MAP_TYPE_HASH, sizeof(struct ms_allowlist_key), 1, 4096},
         {BPF_MAP_TYPE_LRU_HASH, 8, sizeof(struct ms_enforce_event), 4096},
+        {BPF_MAP_TYPE_LRU_HASH, 8, sizeof(struct ms_enforce_intent), 4096},
         {BPF_MAP_TYPE_PERF_EVENT_ARRAY, 4, 4, 0},
         {BPF_MAP_TYPE_PERCPU_ARRAY, 4, sizeof(struct ms_enforce_counters), 1},
         {BPF_MAP_TYPE_PERCPU_ARRAY, 4, sizeof(struct ms_enforce_event), 1},
@@ -445,6 +482,8 @@ real_create(void *context, struct ms_enforcer *owner, void **output,
     instance->maps[MAP_ENABLED] = bpf_map__fd(instance->skeleton->maps.response_enabled);
     instance->maps[MAP_ALLOWLIST] = bpf_map__fd(instance->skeleton->maps.launcher_allowlist);
     instance->maps[MAP_PENDING] = bpf_map__fd(instance->skeleton->maps.pending_exec);
+    instance->maps[MAP_PENDING_INJECTION] =
+        bpf_map__fd(instance->skeleton->maps.pending_injection);
     instance->maps[MAP_EVENTS] = bpf_map__fd(instance->skeleton->maps.enforce_events);
     instance->maps[MAP_COUNTERS] = bpf_map__fd(instance->skeleton->maps.enforce_counters);
     instance->maps[MAP_SCRATCH] = bpf_map__fd(instance->skeleton->maps.enforce_scratch);
@@ -462,7 +501,7 @@ fail:
 static bool
 clear_allowlist(int descriptor)
 {
-    struct ms_launcher_key key;
+    struct ms_allowlist_key key;
 
     while (bpf_map_get_next_key(descriptor, NULL, &key) == 0)
         if (bpf_map_delete_elem(descriptor, &key) != 0)
@@ -487,8 +526,8 @@ real_configure(void *context, void *opaque, const GArray *keys, bool enabled,
     }
     if (keys != NULL)
         for (guint index = 0; index < keys->len; ++index) {
-            const struct ms_launcher_key *key =
-                &g_array_index(keys, struct ms_launcher_key, index);
+            const struct ms_allowlist_key *key =
+                &g_array_index(keys, struct ms_allowlist_key, index);
             if (bpf_map_update_elem(instance->maps[MAP_ALLOWLIST], key, &allowed,
                                     BPF_NOEXIST) != 0) {
                 set_error(error, "enforcer_allowlist", "cannot update launcher allowlist: %s",
@@ -509,7 +548,8 @@ skeleton_map(struct memspy_enforce_bpf *skeleton, size_t index)
 {
     struct bpf_map *maps[MAP_COUNT] = {
         skeleton->maps.response_enabled, skeleton->maps.launcher_allowlist,
-        skeleton->maps.pending_exec, skeleton->maps.enforce_events,
+        skeleton->maps.pending_exec, skeleton->maps.pending_injection,
+        skeleton->maps.enforce_events,
         skeleton->maps.enforce_counters, skeleton->maps.enforce_scratch,
     };
     return maps[index];
@@ -520,7 +560,12 @@ skeleton_link(struct memspy_enforce_bpf *skeleton, size_t index)
 {
     struct bpf_link *links[LINK_COUNT] = {
         skeleton->links.enter_execve, skeleton->links.enter_execveat,
-        skeleton->links.block_memfd_exec,
+        skeleton->links.enforce_enter_process_vm_writev,
+        skeleton->links.enforce_exit_process_vm_writev,
+        skeleton->links.enforce_enter_ptrace, skeleton->links.enforce_exit_ptrace,
+        skeleton->links.block_suspicious_exec, skeleton->links.block_process_vm_write,
+        skeleton->links.block_ptrace_access, skeleton->links.block_ptrace_traceme,
+        skeleton->links.block_proc_mem_write,
     };
     return links[index];
 }
@@ -630,7 +675,7 @@ real_set_enabled(void *context, void *opaque, bool enabled, struct ms_error *err
 
 static int
 real_poll(void *context, void *opaque, int timeout_ms, uint64_t *denied,
-          uint64_t *lost, struct ms_error *error)
+          uint64_t *denied_execs, uint64_t *lost, struct ms_error *error)
 {
     struct real_instance *instance = opaque;
     int count = libbpf_num_possible_cpus();
@@ -649,7 +694,10 @@ real_poll(void *context, void *opaque, int timeout_ms, uint64_t *denied,
     values = g_new0(struct ms_enforce_counters, count);
     if (bpf_map_lookup_elem(instance->maps[MAP_COUNTERS], &zero, values) == 0)
         for (int index = 0; index < count; ++index) {
-            *denied += values[index].denied;
+            for (size_t kind = 1; kind < MS_ENFORCE_KIND_COUNT; ++kind)
+                *denied += values[index].denied[kind];
+            *denied_execs += values[index].denied[MS_ENFORCE_BLOCKED_MEMFD_EXEC] +
+                             values[index].denied[MS_ENFORCE_BLOCKED_DELETED_EXEC];
             *lost += values[index].event_errors;
         }
     *lost += instance->perf_lost;
@@ -845,15 +893,17 @@ int
 ms_enforcer_poll(struct ms_enforcer *enforcer, int timeout_ms, struct ms_error *error)
 {
     uint64_t denied = 0;
+    uint64_t denied_execs = 0;
     uint64_t lost = 0;
     int result;
 
     if (enforcer == NULL || !enforcer->status.supported || enforcer->instance == NULL)
         return 0;
     result = enforcer->ops->poll(enforcer->ops_context, enforcer->instance, timeout_ms,
-                                 &denied, &lost, error);
+                                 &denied, &denied_execs, &lost, error);
     if (result >= 0) {
         enforcer->status.denied = denied;
+        enforcer->status.denied_execs = denied_execs;
         enforcer->status.lost_events = lost;
     }
     return result;

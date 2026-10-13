@@ -40,6 +40,8 @@ struct ms_app_dependencies {
     bool (*response_set_enabled)(void *userdata, bool enabled, struct ms_error *error);
     int (*response_poll)(void *userdata, int timeout_ms,
                          struct ms_enforcer_status *status, struct ms_error *error);
+    bool (*response_barrier_check)(void *userdata, const GArray *keys,
+                                   struct ms_error *error);
     void *userdata;
 };
 
