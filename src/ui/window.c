@@ -3,8 +3,6 @@
 #include <stdio.h>
 #include <string.h>
 
-#define MS_UI_MAX_CONTENT_WIDTH 960
-
 struct alert_view {
     struct ms_alert alert;
     GtkWidget *row;
@@ -42,24 +40,6 @@ static void
 add_class(GtkWidget *widget, const char *name)
 {
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), name);
-}
-
-static void
-constrain_content_width(GtkWidget *widget, GtkAllocation *allocation, gpointer userdata)
-{
-    GtkWidget *content = userdata;
-    GtkAllocation content_allocation;
-    int excess;
-
-    (void)widget;
-    (void)allocation;
-    gtk_widget_get_allocation(content, &content_allocation);
-    excess = content_allocation.width - MS_UI_MAX_CONTENT_WIDTH;
-    if (excess <= 0)
-        return;
-    content_allocation.x += excess / 2;
-    content_allocation.width = MS_UI_MAX_CONTENT_WIDTH;
-    gtk_widget_size_allocate(content, &content_allocation);
 }
 
 static gboolean
@@ -537,7 +517,8 @@ ms_window_new(GtkApplication *application)
     window->empty_title = gtk_label_new("");
     window->empty_detail = gtk_label_new("");
     gtk_window_set_title(GTK_WINDOW(window->window), "MemSpy");
-    gtk_window_set_default_size(GTK_WINDOW(window->window), 440, 560);
+    gtk_window_set_default_size(GTK_WINDOW(window->window), 856, 539);
+    gtk_window_set_resizable(GTK_WINDOW(window->window), false);
     gtk_window_set_titlebar(GTK_WINDOW(window->window), header);
     gtk_header_bar_set_title(GTK_HEADER_BAR(header), "MemSpy");
     gtk_header_bar_set_subtitle(GTK_HEADER_BAR(header), "Fileless activity monitor");
@@ -621,8 +602,6 @@ ms_window_new(GtkApplication *application)
     gtk_box_pack_start(GTK_BOX(root), scroller, true, true, 0);
     gtk_container_set_border_width(GTK_CONTAINER(root), 12);
     gtk_container_add(GTK_CONTAINER(window->window), root);
-    g_signal_connect(window->window, "size-allocate",
-                     G_CALLBACK(constrain_content_width), root);
     ms_window_set_loading(window);
     update_empty_state(window);
     gtk_widget_show_all(root);

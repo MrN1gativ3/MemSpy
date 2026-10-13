@@ -71,7 +71,7 @@ The interface inherits the desktop's Cantarell/system sans stack. Rule IDs, PIDs
 
 ## Layout
 
-The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner places detector health and response mode side by side with a thin separator; the filter row and one vertically scrolling alert list follow it. The dashboard uses the full compact window and stays centered at a maximum width of 960px when the window is wider, keeping status and evidence rows readable. Loading, empty, disconnected, degraded, pending, and error states reserve the same control regions to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
+The window is a fixed 856×539 desktop utility so its monitoring and response controls keep a stable, readable geometry across supported desktops. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner places detector health and response mode side by side with a thin separator; the filter row and one vertically scrolling alert list follow it. Loading, empty, disconnected, degraded, pending, and error states reserve the same control regions to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
 
 ## Elevation & Depth
 

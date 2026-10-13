@@ -330,21 +330,17 @@ test_response_switch_states_and_accessibility(void)
 }
 
 static void
-test_wide_window_keeps_dashboard_readable(void)
+test_window_uses_fixed_dashboard_size(void)
 {
     struct ms_window *window = ms_window_new(NULL);
     GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
-    GtkWidget *content = find_style_class(widget, "memspy-content");
-    GtkAllocation allocation;
+    int width = 0;
+    int height = 0;
 
-    g_assert_nonnull(content);
-    gtk_widget_show(widget);
-    gtk_window_resize(GTK_WINDOW(widget), 1400, 700);
-    while (gtk_events_pending())
-        gtk_main_iteration();
-    gtk_widget_get_allocation(content, &allocation);
-    g_assert_cmpint(allocation.width, <=, 960);
-    g_assert_cmpint(allocation.width, >=, 400);
+    gtk_window_get_default_size(GTK_WINDOW(widget), &width, &height);
+    g_assert_cmpint(width, ==, 856);
+    g_assert_cmpint(height, ==, 539);
+    g_assert_false(gtk_window_get_resizable(GTK_WINDOW(widget)));
 
     ms_window_free(window);
 }
@@ -553,8 +549,8 @@ main(int argc, char **argv)
                     test_window_states_filters_and_accessibility);
     g_test_add_func("/ui/response-switch-states-accessibility",
                     test_response_switch_states_and_accessibility);
-    g_test_add_func("/ui/wide-window-readable-width",
-                    test_wide_window_keeps_dashboard_readable);
+    g_test_add_func("/ui/fixed-dashboard-size",
+                    test_window_uses_fixed_dashboard_size);
     g_test_add_func("/ui/alert-outcomes-grouped-process-details",
                     test_alert_outcomes_and_grouped_process_details);
     g_test_add_func("/ui/alert-missing-and-long-fields",
