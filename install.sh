@@ -239,11 +239,26 @@ meson test -C "$build_dir" --no-suite privileged --print-errorlogs
 meson install -C "$build_dir"
 
 restore_allowlist
-if "$build_dir/memspyd" --check-response; then
+reboot_required=false
+response_probe=
+if response_probe=$("$build_dir/memspyd" --check-response 2>&1); then
+    printf '%s\n' "$response_probe"
     install -d -m 0700 -o root -g root /sys/fs/bpf/memspy
 else
     probe_status=$?
+    printf '%s\n' "$response_probe"
     test "$probe_status" -eq 3 || fail "response support probe failed unexpectedly"
+    case "$response_probe" in
+        *"BPF LSM is not active"*)
+            if "$script_dir/packaging/common/enable-bpf-lsm.sh" "$distribution"; then
+                reboot_required=true
+            else
+                boot_status=$?
+                test "$boot_status" -eq 3 || fail "automatic BPF LSM setup failed unexpectedly"
+                echo "MemSpy installer: BPF LSM must be enabled manually before response mode is available" >&2
+            fi
+            ;;
+    esac
 fi
 systemd-sysusers /usr/lib/sysusers.d/memspyd.conf
 systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf || true
@@ -304,4 +319,8 @@ if [ "$desktop_environment" = headless ]; then
     fi
 else
     echo "Log out and back in as $desktop_user, then run: memspy-ui"
+fi
+if [ "$reboot_required" = true ]; then
+    echo "BPF LSM was enabled in the bootloader configuration."
+    echo "Reboot to activate response mode: sudo reboot"
 fi

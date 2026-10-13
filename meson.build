@@ -2,6 +2,7 @@ project(
   'memspy',
   'c',
   version: '0.1.0',
+  license: 'GPL-2.0-only',
   default_options: ['c_std=c17', 'warning_level=3', 'werror=true', 'b_pie=true'],
 )
 

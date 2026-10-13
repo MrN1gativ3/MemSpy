@@ -22,6 +22,8 @@ grep -q -- '--prefix=/opt/memspy' "$installer"
 grep -q 'headless' "$installer"
 grep -q '"$build_dir/memspyd" --check-response' "$installer"
 grep -q 'response-allowlist.conf' "$installer"
+grep -q 'packaging/common/enable-bpf-lsm.sh' "$installer"
+grep -q 'reboot_required' "$installer"
 
 if [ "$(id -u)" -ne 0 ]; then
     error_file=$(mktemp)

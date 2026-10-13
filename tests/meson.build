@@ -182,6 +182,10 @@ test('uninstall-state', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_uninstall_state.sh',
             meson.project_source_root() / 'packaging/common/remove-state.sh'])
 
+test('bpf-lsm-boot', find_program('sh'),
+     args: [meson.current_source_dir() / 'package/test_bpf_lsm_boot.sh',
+            meson.project_source_root() / 'packaging/common/enable-bpf-lsm.sh'])
+
 test('ci-dependencies', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_ci_dependencies.sh',
             meson.project_source_root() / '.github/workflows/ci.yml'])
