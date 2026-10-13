@@ -1,4 +1,6 @@
 /build*/
+/.superpowers/
+/premium-audit.json
 
 *.o
 __pycache__/
