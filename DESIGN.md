@@ -3,16 +3,16 @@ version: alpha
 name: "MemSpy"
 description: "A compact GTK security alert surface for GNOME and KDE Plasma with an evidence-rail signature."
 colors:
-  accent: "#3584E4"
+  accent: "#62A0EA"
   healthy: "#2EC27E"
   medium: "#E5A50A"
-  high: "#C01C28"
-  offline: "#77767B"
+  high: "#E33D4F"
+  offline: "#8A8D96"
   light-surface: "#FFFFFF"
   light-background: "#F6F5F4"
   light-text: "#2E3436"
-  dark-surface: "#3D3846"
-  dark-background: "#241F31"
+  dark-surface: "#292D38"
+  dark-background: "#20232D"
   dark-text: "#F6F5F4"
 typography:
   interface:
@@ -57,13 +57,13 @@ The interface should feel like a well-kept desktop system instrument: calm durin
 - **Memorable signature:** The alert evidence rail pairs semantic color with an explicit High or Medium label and rule ID.
 - **Restraint:** Window chrome, typography, focus, menus, buttons, scrolling, and disclosure behavior remain GTK native; Plasma uses the host GTK theme bridge. The panel indicator remains monochrome while in-window icons use restrained semantic color.
 - **Anti-references:** No SOC wallboard, neon terminal, card-grid SaaS dashboard, charts, gradients, glass effects, or red-dominant background. Those styles exaggerate activity and obscure local health.
-- **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. GTK theme colors own ordinary surfaces and text; the adapter owns only semantic status accents and stable geometry.
+- **Token ownership/runtime mapping:** `data/memspy-ui.css` is the runtime GTK CSS adapter and canonical implementation. This file mirrors its accepted values and intent. The adapter owns the dark application surfaces, semantic status accents, and stable geometry; GTK owns native control states, focus, and window behavior.
 
 The canonical capability owners are GTK native controls for buttons, switches, menus, scrolling, disclosure, focus, and keyboard behavior; `src/ui/state.c` for connection, unread, filter, and notification rules; `src/ui/window.c` for the single alert-list surface and response presentation; and `src/ui/indicator.c` for the panel menu. `memspyctl` is the native headless interface and shares the daemon client and canonical JSON codec; it does not define GTK behavior. There are no forms, destructive actions, tables, authored listboxes, or route transitions.
 
 ## Colors
 
-`accent` is the default GTK blue focus/action reference. `healthy`, `medium`, `high`, and `offline` are semantic only and always accompanied by text or icon shape. Light and dark surface tokens document representative Adwaita values; ordinary backgrounds and text must use GTK theme values so high-contrast and custom desktop themes remain operable. High red appears only on a rail, badge, or icon—not as a page wash. Dark mode remaps surfaces while preserving severity meaning.
+`accent` is the muted blue action reference. `healthy`, `medium`, `high`, and `offline` are semantic only and always accompanied by text or icon shape. The application uses fixed charcoal and blue-gray content surfaces while GTK continues to own native control states and focus behavior. High red appears only on a rail, badge, or icon—not as a page wash.
 
 ## Typography
 
@@ -71,7 +71,7 @@ The interface inherits the desktop's Cantarell/system sans stack. Rule IDs, PIDs
 
 ## Layout
 
-The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner contains detector health plus a compact response-mode row; the filter row and one vertically scrolling alert list follow it. The dashboard uses the full compact window and stays centered at a maximum width of 960px when the window is wider, keeping status and evidence rows readable. Loading, empty, disconnected, degraded, pending, and error states reserve the same control regions to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
+The default window is 440×560, resizable down to a practical compact desktop size. Its native header bar pairs the product name with the subtitle “Fileless activity monitor.” A fixed health banner places detector health and response mode side by side with a thin separator; the filter row and one vertically scrolling alert list follow it. The dashboard uses the full compact window and stays centered at a maximum width of 960px when the window is wider, keeping status and evidence rows readable. Loading, empty, disconnected, degraded, pending, and error states reserve the same control regions to avoid layout shifts. Spacing is dense but not cramped: 6px within evidence groups, 12px around controls, and 16px between major regions. The scroll owner is the alert list, not the application window shell.
 
 ## Elevation & Depth
 
@@ -93,7 +93,7 @@ Filters are GTK toggle/radio-style buttons labeled All, High, and Medium with vi
 
 ### Navigation and data display
 
-There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each row exposes locale-formatted time, severity, rule, outcome (`Blocked` or `Detected`), user/process identity, executable, command line, and parent evidence as a selectable incident summary. A full-width keyboard-operable `View incident details` toggle reveals the remaining Identity, Execution, optional Workload, optional Target, and Detection fields and changes to `Hide incident details` while open. Empty fields are omitted. Workload holds systemd unit, cgroup, container, terminal/SSH-origin, and namespace evidence without guessing absent values. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
+There is one window and no route hierarchy. Alerts render newest first in a bounded list. Each collapsed row exposes locale-formatted time, severity, rule, outcome (`Blocked` or `Detected`), user/process identity, executable, and parent PID. A keyboard-operable header chevron reveals four stable sections—Identity, Execution, Detection, and Evidence—inside the same card; a full-width hide action remains available at the bottom of long expanded records. Sections flow into two columns when space permits and one column in the compact window. Empty optional fields are omitted, important missing evidence is marked unavailable, and complete technical values remain selectable in details. Evidence retains parent hashes, workload, namespace, target, and completeness telemetry without guessing absent values. Filtering is local over the bounded history page. Selecting a notification opens the window and focuses its alert when present. The empty state names the successful condition (“No alerts detected”) and the 30-day monitoring window without implying the detector is healthy when it is offline.
 
 ### Forms and overlays
 

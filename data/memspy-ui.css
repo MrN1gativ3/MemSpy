@@ -1,45 +1,109 @@
+.memspy-window,
+.memspy-window .memspy-content,
+.memspy-window scrolledwindow,
+.memspy-window list {
+  background-color: #20232D;
+  color: #F2F3F5;
+}
+
+.memspy-window headerbar {
+  background-color: #292D38;
+  color: #F2F3F5;
+  border-bottom: 1px solid #3A3F4D;
+}
+
 .memspy-health-healthy { border-left: 4px solid #2EC27E; }
 .memspy-health-medium { border-left: 4px solid #E5A50A; }
-.memspy-health-high { border-left: 4px solid #C01C28; }
-.memspy-health-offline { border-left: 4px solid #77767B; }
-
+.memspy-health-high { border-left: 4px solid #E33D4F; }
+.memspy-health-offline { border-left: 4px solid #8A8D96; }
 .memspy-health-healthy .memspy-state-icon { color: #2EC27E; }
 .memspy-health-medium .memspy-state-icon,
 .memspy-health-medium .memspy-alert-icon { color: #E5A50A; }
 .memspy-health-high .memspy-state-icon,
-.memspy-health-high .memspy-alert-icon { color: #C01C28; }
-.memspy-health-offline .memspy-state-icon { color: #77767B; }
-.memspy-empty-icon { color: #3584E4; }
+.memspy-health-high .memspy-alert-icon { color: #E33D4F; }
+.memspy-health-offline .memspy-state-icon { color: #8A8D96; }
+.memspy-empty-icon { color: #62A0EA; }
 
 .memspy-status-banner {
   padding: 12px;
   border-radius: 8px;
-  border-top: 1px solid alpha(@theme_fg_color, 0.12);
-  border-right: 1px solid alpha(@theme_fg_color, 0.12);
-  border-bottom: 1px solid alpha(@theme_fg_color, 0.12);
-  background-color: alpha(@theme_fg_color, 0.035);
+  border-top: 1px solid #414654;
+  border-right: 1px solid #414654;
+  border-bottom: 1px solid #414654;
+  background-color: #2A2E39;
 }
+
+.memspy-status-section { min-width: 150px; }
+.memspy-status-separator { background-color: #464B59; }
 
 .memspy-status-title,
 .memspy-empty-title,
-.memspy-detail-label,
-.memspy-detail-section,
 .memspy-response-title,
-.memspy-severity { font-weight: bold; }
+.memspy-severity,
+.memspy-section-title { font-weight: bold; }
 
 .memspy-status-detail,
 .memspy-empty-detail,
 .memspy-timestamp,
 .memspy-response-state,
-.memspy-response-error {
-  color: alpha(@theme_fg_color, 0.68);
+.memspy-summary-label,
+.memspy-detail-label {
+  color: #AEB3BF;
   font-size: 0.875rem;
 }
 
-.memspy-response-error { color: #C01C28; }
-.memspy-detail-section { margin-top: 6px; }
-.memspy-incident-summary { margin-top: 4px; }
-.memspy-details-toggle { margin-top: 6px; padding: 7px 12px; }
+.memspy-response-error {
+  color: #FF7B86;
+  font-size: 0.875rem;
+}
+
+.memspy-incident-description { color: #E2E4E9; }
+.memspy-incident-summary,
+.memspy-detail-grid {
+  margin-top: 4px;
+  padding: 0;
+  background-color: transparent;
+}
+
+.memspy-incident-summary flowboxchild,
+.memspy-detail-grid flowboxchild {
+  padding: 0;
+  background-color: transparent;
+}
+
+.memspy-summary-item {
+  padding: 5px 8px;
+  border-radius: 5px;
+  background-color: #292D37;
+}
+
+.memspy-summary-value,
+.memspy-detail-value { color: #F2F3F5; }
+
+.memspy-detail-section {
+  padding: 10px;
+  border: 1px solid #3D4250;
+  border-radius: 6px;
+  background-color: #262A34;
+}
+
+.memspy-section-title {
+  color: #D9DCE3;
+  font-size: 0.95rem;
+}
+
+.memspy-details-toggle {
+  margin-top: 2px;
+  padding: 6px 10px;
+  color: #C4C8D1;
+  background-color: transparent;
+}
+
+.memspy-expand-button {
+  padding: 4px;
+  min-width: 28px;
+  min-height: 28px;
+}
 
 .memspy-outcome {
   padding: 2px 7px;
@@ -49,29 +113,41 @@
 }
 
 .memspy-outcome-detected {
-  color: #3584E4;
-  background-color: alpha(#3584E4, 0.12);
+  color: #62A0EA;
+  background-color: alpha(#62A0EA, 0.14);
 }
 
 .memspy-outcome-blocked {
-  color: #C01C28;
-  background-color: alpha(#C01C28, 0.12);
+  color: #FF6675;
+  background-color: alpha(#E33D4F, 0.15);
 }
 
 .memspy-filters { margin: 2px 0; }
-.memspy-filter-button { padding: 5px 12px; }
+.memspy-filter-button {
+  padding: 5px 11px;
+  border-color: #454A58;
+  background-color: #292D37;
+  color: #D5D8DF;
+}
+
+.memspy-filter-button:checked {
+  border-color: #8B6FC0;
+  background-color: #5B447B;
+  color: #FFFFFF;
+}
 
 .memspy-alert-row {
   margin-bottom: 8px;
-  padding: 14px;
-  border-radius: 6px;
-  border-top: 1px solid alpha(@theme_fg_color, 0.12);
-  border-right: 1px solid alpha(@theme_fg_color, 0.12);
-  border-bottom: 1px solid alpha(@theme_fg_color, 0.12);
+  padding: 12px;
+  border-radius: 7px;
+  border-top: 1px solid #3B404D;
+  border-right: 1px solid #3B404D;
+  border-bottom: 1px solid #3B404D;
+  background-color: #242731;
 }
 
-.memspy-severity { min-width: 58px; }
+.memspy-alert-row:selected { background-color: #292D38; }
+.memspy-severity { min-width: 54px; }
 .memspy-rule-id { font-family: monospace; font-size: 0.875rem; }
-.memspy-detail-value { margin-bottom: 4px; }
 .memspy-empty-title { font-size: 1.1rem; }
 .memspy-empty-detail { margin-bottom: 20px; }

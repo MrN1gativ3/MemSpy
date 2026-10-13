@@ -101,6 +101,29 @@ has_label_text(GtkWidget *widget, const char *text)
     return search.found;
 }
 
+static GtkWidget *
+find_label_widget(GtkWidget *widget, const char *text)
+{
+    GList *children;
+    GList *item;
+
+    if (GTK_IS_LABEL(widget) &&
+        g_strcmp0(gtk_label_get_text(GTK_LABEL(widget)), text) == 0)
+        return widget;
+    if (!GTK_IS_CONTAINER(widget))
+        return NULL;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (item = children; item != NULL; item = item->next) {
+        GtkWidget *result = find_label_widget(GTK_WIDGET(item->data), text);
+        if (result != NULL) {
+            g_list_free(children);
+            return result;
+        }
+    }
+    g_list_free(children);
+    return NULL;
+}
+
 struct label_count {
     const char *text;
     unsigned int count;
@@ -150,6 +173,27 @@ style_class_count(GtkWidget *widget, const char *name)
 
     count_style_class(widget, &search);
     return search.count;
+}
+
+static unsigned int
+revealed_incident_count(GtkWidget *widget)
+{
+    GList *children;
+    GList *item;
+    unsigned int count = 0;
+
+    if (GTK_IS_REVEALER(widget) &&
+        gtk_style_context_has_class(gtk_widget_get_style_context(widget),
+                                    "memspy-incident-details") &&
+        gtk_revealer_get_reveal_child(GTK_REVEALER(widget)))
+        ++count;
+    if (!GTK_IS_CONTAINER(widget))
+        return count;
+    children = gtk_container_get_children(GTK_CONTAINER(widget));
+    for (item = children; item != NULL; item = item->next)
+        count += revealed_incident_count(GTK_WIDGET(item->data));
+    g_list_free(children);
+    return count;
 }
 
 static GtkWidget *
@@ -338,25 +382,30 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(ms_window_add_alert(window, &blocked));
     g_assert_true(has_label_text(widget, "Detected"));
     g_assert_true(has_label_text(widget, "Blocked"));
-    details_button = find_button_label(widget, "View incident details ▾");
+    details_button = find_style_class(widget, "memspy-expand-button");
     g_assert_nonnull(details_button);
     details_revealer = find_style_class(widget, "memspy-incident-details");
     g_assert_true(GTK_IS_REVEALER(details_revealer));
     g_assert_false(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
     g_assert_cmpuint(style_class_count(widget, "memspy-incident-summary"), ==, 2);
+    g_assert_cmpuint(style_class_count(widget, "memspy-summary-item"), ==, 7);
     gtk_button_clicked(GTK_BUTTON(details_button));
-    g_assert_cmpstr(gtk_button_get_label(GTK_BUTTON(details_button)), ==,
-                    "Hide incident details ▴");
+    g_assert_cmpstr(atk_object_get_name(gtk_widget_get_accessible(details_button)), ==,
+                    "Hide incident details");
     g_assert_true(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
+    g_assert_cmpuint(revealed_incident_count(widget), ==, 1);
     gtk_button_clicked(GTK_BUTTON(details_button));
-    g_assert_cmpstr(gtk_button_get_label(GTK_BUTTON(details_button)), ==,
-                    "View incident details ▾");
+    g_assert_cmpstr(atk_object_get_name(gtk_widget_get_accessible(details_button)), ==,
+                    "View incident details");
     g_assert_false(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
+    g_assert_cmpuint(style_class_count(widget, "memspy-detail-section"), ==, 8);
+    g_assert_cmpuint(style_class_count(widget, "memspy-detail-grid"), ==, 2);
     g_assert_true(has_label_text(widget, "Identity"));
     g_assert_true(has_label_text(widget, "Execution"));
-    g_assert_true(has_label_text(widget, "Workload"));
-    g_assert_true(has_label_text(widget, "Target"));
     g_assert_true(has_label_text(widget, "Detection"));
+    g_assert_true(has_label_text(widget, "Evidence"));
+    g_assert_false(has_label_text(widget, "Workload"));
+    g_assert_false(has_label_text(widget, "Target"));
     g_assert_true(has_label_text(widget, "User"));
     g_assert_true(has_label_text(widget, "Process"));
     g_assert_true(has_label_text(widget, "Parent process name"));
@@ -381,12 +430,43 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Alert ID"));
     g_assert_true(has_label_text(widget, "Rule"));
     g_assert_true(has_label_text(widget, "Detection signal"));
+    g_assert_true(has_label_text(widget, "Evidence completeness"));
+    g_assert_true(has_label_text(widget, "Complete"));
     g_assert_true(has_label_text(widget, "Arguments truncated"));
-    g_assert_cmpuint(label_text_count(widget, "Target"), ==, 1);
+    g_assert_cmpuint(label_text_count(widget, "Target PID"), ==, 1);
     g_assert_cmpuint(label_text_count(widget, "Launcher executable"), ==, 1);
     g_assert_cmpuint(label_text_count(widget, "Arguments truncated"), ==, 1);
-    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-blocked"), ==, 1);
-    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-detected"), ==, 1);
+    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-blocked"), ==, 2);
+    g_assert_cmpuint(style_class_count(widget, "memspy-outcome-detected"), ==, 2);
+
+    ms_window_free(window);
+}
+
+static void
+test_alert_missing_and_long_fields(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert alert = fixture_alert(9, MS_SEVERITY_HIGH,
+        "loader --payload /a/very/long/path/that/must/remain/copyable/in/the/expanded/incident/view");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *command;
+
+    alert.comm[0] = '\0';
+    alert.exe[0] = '\0';
+    alert.evidence[0] = '\0';
+    alert.parent_comm[0] = '\0';
+    alert.parent_exe[0] = '\0';
+    alert.parent_sha256[0] = '\0';
+    alert.ppid = 0;
+    alert.enrichment_incomplete = true;
+    g_assert_true(ms_window_add_alert(window, &alert));
+    g_assert_cmpuint(label_text_count(widget, "Unavailable"), >=, 4);
+    g_assert_false(has_label_text(widget, "Parent process name"));
+    g_assert_true(has_label_text(widget, "Some process details were unavailable"));
+    command = find_label_widget(widget, alert.cmdline);
+    g_assert_nonnull(command);
+    g_assert_true(gtk_label_get_selectable(GTK_LABEL(command)));
+    g_assert_cmpstr(gtk_widget_get_tooltip_text(command), ==, alert.cmdline);
 
     ms_window_free(window);
 }
@@ -400,6 +480,11 @@ test_window_states_filters_and_accessibility(void)
         .protected = false,
         .storage_available = false,
     };
+    struct ms_health stopped = {
+        .state = MS_HEALTH_FAILED,
+        .protected = false,
+        .storage_available = true,
+    };
     struct ms_alert high = fixture_alert(2, MS_SEVERITY_HIGH,
         "fixture --a-very-long-command-line-that-must-wrap-without-hiding-evidence");
     struct ms_alert medium = fixture_alert(1, MS_SEVERITY_MEDIUM, "fixture --medium");
@@ -409,7 +494,7 @@ test_window_states_filters_and_accessibility(void)
     g_assert_cmpstr(atk_object_get_name(accessible), ==, "Fileless malware alerts");
     g_assert_cmpstr(gtk_header_bar_get_subtitle(GTK_HEADER_BAR(titlebar)), ==,
                     "Fileless activity monitor");
-    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 0"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All (0)"));
     g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
                                        "memspy-state-icon"), ==, 1);
     g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
@@ -418,6 +503,8 @@ test_window_states_filters_and_accessibility(void)
     g_assert_cmpstr(ms_window_status_text(window), ==, "Connecting to detector…");
     g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)),
                                  "Showing available alert history"));
+    ms_window_set_health(window, &stopped);
+    g_assert_cmpstr(ms_window_status_text(window), ==, "Monitoring stopped");
     ms_window_set_health(window, &degraded);
     g_assert_cmpstr(ms_window_status_text(window), ==, "Monitoring degraded");
     g_assert_true(ms_window_add_alert(window, &medium));
@@ -430,9 +517,9 @@ test_window_states_filters_and_accessibility(void)
     g_assert_false(ms_window_add_alert(window, &high));
     g_assert_cmpuint(style_class_count(GTK_WIDGET(ms_window_widget(window)),
                                        "memspy-alert-icon"), ==, 2);
-    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All 2"));
-    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "High 1"));
-    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "Medium 1"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All (2)"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "High (1)"));
+    g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "Medium (1)"));
     g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)), "Executable"));
     g_assert_true(has_label_text(GTK_WIDGET(ms_window_widget(window)), "Detection signal"));
     ms_window_set_filter(window, MS_UI_FILTER_ALL);
@@ -469,5 +556,7 @@ main(int argc, char **argv)
                     test_wide_window_keeps_dashboard_readable);
     g_test_add_func("/ui/alert-outcomes-grouped-process-details",
                     test_alert_outcomes_and_grouped_process_details);
+    g_test_add_func("/ui/alert-missing-and-long-fields",
+                    test_alert_missing_and_long_fields);
     return g_test_run();
 }

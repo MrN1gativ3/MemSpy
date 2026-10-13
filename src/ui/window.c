@@ -122,38 +122,77 @@ new_wrapping_label(const char *text)
     return label;
 }
 
+struct detail_section {
+    GtkWidget *container;
+    GtkWidget *grid;
+    int row;
+};
+
 static GtkWidget *
-new_detail_field(const char *title, const char *value, bool technical)
+new_summary_item(const char *title, const char *value, bool technical)
 {
     GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 2);
-    GtkWidget *heading = new_wrapping_label(title);
-    GtkWidget *content = new_wrapping_label(value);
+    GtkWidget *heading = gtk_label_new(title);
+    GtkWidget *content = gtk_label_new(value);
 
-    add_class(heading, "memspy-detail-label");
-    add_class(content, "memspy-detail-value");
+    gtk_label_set_xalign(GTK_LABEL(heading), 0.0F);
+    gtk_label_set_xalign(GTK_LABEL(content), 0.0F);
+    gtk_label_set_ellipsize(GTK_LABEL(content), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_tooltip_text(content, value);
+    add_class(box, "memspy-summary-item");
+    add_class(heading, "memspy-summary-label");
+    add_class(content, "memspy-summary-value");
     if (technical)
         add_class(content, "memspy-rule-id");
-    gtk_label_set_selectable(GTK_LABEL(content), true);
     gtk_box_pack_start(GTK_BOX(box), heading, false, false, 0);
     gtk_box_pack_start(GTK_BOX(box), content, false, false, 0);
     return box;
 }
 
-static void
-add_detail_field(GtkWidget *box, const char *title, const char *value, bool technical)
+static struct detail_section
+new_detail_section(const char *title)
 {
-    if (value != NULL && value[0] != '\0')
-        gtk_box_pack_start(GTK_BOX(box), new_detail_field(title, value, technical),
-                           false, false, 0);
+    struct detail_section section = {0};
+    GtkWidget *title_label = gtk_label_new(title);
+
+    section.container = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    section.grid = gtk_grid_new();
+    gtk_label_set_xalign(GTK_LABEL(title_label), 0.0F);
+    gtk_grid_set_column_spacing(GTK_GRID(section.grid), 12);
+    gtk_grid_set_row_spacing(GTK_GRID(section.grid), 6);
+    gtk_widget_set_hexpand(section.container, true);
+    gtk_widget_set_size_request(section.container, 280, -1);
+    add_class(section.container, "memspy-detail-section");
+    add_class(title_label, "memspy-section-title");
+    gtk_box_pack_start(GTK_BOX(section.container), title_label, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(section.container), section.grid, false, false, 0);
+    return section;
 }
 
 static GtkWidget *
-new_detail_section(const char *title)
+add_detail_field(struct detail_section *section, const char *title, const char *value,
+                 bool technical)
 {
-    GtkWidget *label = new_wrapping_label(title);
+    GtkWidget *heading;
+    GtkWidget *content;
 
-    add_class(label, "memspy-detail-section");
-    return label;
+    if (value == NULL || value[0] == '\0')
+        return NULL;
+    heading = new_wrapping_label(title);
+    content = new_wrapping_label(value);
+    gtk_widget_set_halign(heading, GTK_ALIGN_START);
+    gtk_widget_set_valign(heading, GTK_ALIGN_START);
+    gtk_widget_set_hexpand(content, true);
+    gtk_label_set_selectable(GTK_LABEL(content), true);
+    gtk_widget_set_tooltip_text(content, value);
+    add_class(heading, "memspy-detail-label");
+    add_class(content, "memspy-detail-value");
+    if (technical)
+        add_class(content, "memspy-rule-id");
+    gtk_grid_attach(GTK_GRID(section->grid), heading, 0, section->row, 1, 1);
+    gtk_grid_attach(GTK_GRID(section->grid), content, 1, section->row, 1, 1);
+    ++section->row;
+    return content;
 }
 
 static void
@@ -163,10 +202,18 @@ incident_details_toggled(GtkToggleButton *button, gpointer userdata)
     const bool expanded = gtk_toggle_button_get_active(button);
     const char *name = expanded ? "Hide incident details" : "View incident details";
 
-    gtk_button_set_label(GTK_BUTTON(button), expanded ?
-                         "Hide incident details ▴" : "View incident details ▾");
+    gtk_button_set_image(GTK_BUTTON(button), gtk_image_new_from_icon_name(
+        expanded ? "pan-up-symbolic" : "pan-down-symbolic", GTK_ICON_SIZE_BUTTON));
+    gtk_widget_set_tooltip_text(GTK_WIDGET(button), name);
     atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(button)), name);
     gtk_revealer_set_reveal_child(details, expanded);
+}
+
+static void
+hide_incident_details(GtkButton *button, gpointer userdata)
+{
+    (void)button;
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(userdata), false);
 }
 
 static void
@@ -183,11 +230,11 @@ update_filter_labels(struct ms_window *window)
         else
             ++medium;
     }
-    snprintf(label, sizeof label, "All %u", window->alerts->len);
+    snprintf(label, sizeof label, "All (%u)", window->alerts->len);
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[0]), label);
-    snprintf(label, sizeof label, "High %zu", high);
+    snprintf(label, sizeof label, "High (%zu)", high);
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[1]), label);
-    snprintf(label, sizeof label, "Medium %zu", medium);
+    snprintf(label, sizeof label, "Medium (%zu)", medium);
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[2]), label);
 }
 
@@ -207,11 +254,19 @@ create_alert_row(struct alert_view *view)
     GtkWidget *outcome_label = gtk_label_new(outcome);
     GtkWidget *rule_label = gtk_label_new(view->alert.rule_id);
     GtkWidget *timestamp;
-    GtkWidget *explanation = new_wrapping_label(view->alert.explanation);
-    GtkWidget *summary = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
-    GtkWidget *details_button = gtk_toggle_button_new_with_label("View incident details ▾");
-    GtkWidget *details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *explanation = new_wrapping_label(view->alert.explanation[0] == '\0' ?
+                                                "Description unavailable" :
+                                                view->alert.explanation);
+    GtkWidget *summary = gtk_flow_box_new();
+    GtkWidget *details_button = gtk_toggle_button_new();
+    GtkWidget *details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
+    GtkWidget *details_grid = gtk_flow_box_new();
+    GtkWidget *hide_button = gtk_button_new_with_label("Hide incident details ↑");
     GtkWidget *details_revealer = gtk_revealer_new();
+    struct detail_section identity = new_detail_section("Identity");
+    struct detail_section execution = new_detail_section("Execution");
+    struct detail_section detection = new_detail_section("Detection");
+    struct detail_section evidence = new_detail_section("Evidence");
     GDateTime *date = g_date_time_new_from_unix_local(view->alert.timestamp_utc);
     char *time_text = date == NULL ? g_strdup("Time unavailable") :
         g_date_time_format(date, "%x · %X");
@@ -225,8 +280,12 @@ create_alert_row(struct alert_view *view)
     char bytes_written[32];
     char alert_id[32];
     char accessible_name[256];
+    char container[MS_CONTAINER_ID_BYTES + MS_CONTAINER_RUNTIME_BYTES + 8U];
+    GtkWidget *outcome_value;
 
-    snprintf(process_text, sizeof process_text, "%s · PID %d", view->alert.comm, view->alert.pid);
+    snprintf(process_text, sizeof process_text, "%s · PID %d",
+             view->alert.comm[0] == '\0' ? "Unavailable" : view->alert.comm,
+             view->alert.pid);
     if (view->alert.username[0] != '\0')
         snprintf(user_text, sizeof user_text, "%s · UID %u", view->alert.username,
                  (unsigned int)view->alert.uid);
@@ -244,6 +303,9 @@ create_alert_row(struct alert_view *view)
     add_class(outcome_label, "memspy-outcome");
     add_class(outcome_label, blocked ? "memspy-outcome-blocked" : "memspy-outcome-detected");
     add_class(rule_label, "memspy-rule-id");
+    gtk_label_set_ellipsize(GTK_LABEL(rule_label), PANGO_ELLIPSIZE_END);
+    gtk_widget_set_tooltip_text(rule_label, view->alert.rule_id);
+    gtk_label_set_selectable(GTK_LABEL(rule_label), true);
     gtk_label_set_xalign(GTK_LABEL(severity_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(outcome_label), 0.0F);
     gtk_label_set_xalign(GTK_LABEL(rule_label), 0.0F);
@@ -251,112 +313,130 @@ create_alert_row(struct alert_view *view)
     gtk_box_pack_start(GTK_BOX(heading), severity_label, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), outcome_label, false, false, 0);
     gtk_box_pack_start(GTK_BOX(heading), rule_label, true, true, 0);
+    add_class(details_button, "memspy-expand-button");
+    gtk_button_set_relief(GTK_BUTTON(details_button), GTK_RELIEF_NONE);
+    gtk_button_set_image(GTK_BUTTON(details_button), gtk_image_new_from_icon_name(
+        "pan-down-symbolic", GTK_ICON_SIZE_BUTTON));
+    gtk_widget_set_tooltip_text(details_button, "View incident details");
+    atk_object_set_name(gtk_widget_get_accessible(details_button), "View incident details");
+    gtk_box_pack_end(GTK_BOX(heading), details_button, false, false, 0);
     gtk_box_pack_end(GTK_BOX(heading), timestamp, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
+    add_class(explanation, "memspy-incident-description");
     gtk_box_pack_start(GTK_BOX(content), explanation, false, false, 0);
 
     add_class(summary, "memspy-incident-summary");
-    add_detail_field(summary, "User", user_text, false);
-    add_detail_field(summary, "Process", process_text, true);
-    add_detail_field(summary, blocked ? "Attempted executable" : "Executable",
-                     view->alert.exe, true);
-    add_detail_field(summary, "Command line", view->alert.cmdline, true);
-    add_detail_field(summary, "Parent process name", view->alert.parent_comm, true);
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(summary), GTK_SELECTION_NONE);
+    gtk_flow_box_set_homogeneous(GTK_FLOW_BOX(summary), true);
+    gtk_flow_box_set_min_children_per_line(GTK_FLOW_BOX(summary), 1);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(summary), 2);
+    gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(summary), 12);
+    gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(summary), 6);
+    gtk_container_add(GTK_CONTAINER(summary), new_summary_item("User", user_text, false));
+    gtk_container_add(GTK_CONTAINER(summary), new_summary_item("Process", process_text, true));
+    gtk_container_add(GTK_CONTAINER(summary), new_summary_item(
+        blocked ? "Attempted executable" : "Executable",
+        view->alert.exe[0] == '\0' ? "Unavailable" : view->alert.exe, true));
     if (view->alert.ppid > 0) {
         snprintf(parent_pid, sizeof parent_pid, "%d", view->alert.ppid);
-        add_detail_field(summary, "Parent PID", parent_pid, true);
+        gtk_container_add(GTK_CONTAINER(summary),
+                          new_summary_item("Parent PID", parent_pid, true));
     }
-    add_detail_field(summary, "Parent executable", view->alert.parent_exe, true);
-    add_detail_field(summary, "Parent SHA-256", view->alert.parent_sha256, true);
     gtk_box_pack_start(GTK_BOX(content), summary, false, false, 0);
 
-    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Identity"), false, false, 0);
-    add_detail_field(details, "User", user_text, false);
-    add_detail_field(details, "Process", process_text, true);
-    add_detail_field(details, "Parent process name", view->alert.parent_comm, true);
+    add_detail_field(&identity, "User", user_text, false);
+    add_detail_field(&identity, "Process", process_text, true);
+    add_detail_field(&identity, "Parent process name", view->alert.parent_comm, true);
     if (view->alert.ppid > 0)
-        add_detail_field(details, "Parent PID", parent_pid, true);
-    add_detail_field(details, "Parent executable", view->alert.parent_exe, true);
-    add_detail_field(details, "Parent SHA-256", view->alert.parent_sha256, true);
-    add_detail_field(details, "Grandparent process name", view->alert.grandparent_comm, true);
+        add_detail_field(&identity, "Parent PID", parent_pid, true);
+    add_detail_field(&identity, "Parent executable", view->alert.parent_exe, true);
+
+    add_detail_field(&execution, blocked ? "Attempted executable" : "Executable",
+                     view->alert.exe[0] == '\0' ? "Unavailable" : view->alert.exe, true);
+    add_detail_field(&execution, "Command line", view->alert.cmdline, true);
+    if (blocked)
+        add_detail_field(&execution, "Launcher executable", view->alert.launcher_exe, true);
+    add_detail_field(&execution, "TTY", view->alert.tty, true);
+
+    outcome_value = add_detail_field(&detection, "Outcome", outcome, false);
+    if (outcome_value != NULL) {
+        add_class(outcome_value, "memspy-outcome");
+        add_class(outcome_value, blocked ? "memspy-outcome-blocked" :
+                                          "memspy-outcome-detected");
+    }
+    snprintf(alert_id, sizeof alert_id, "%lld", (long long)view->alert.id);
+    add_detail_field(&detection, "Alert ID", alert_id, true);
+    add_detail_field(&detection, "Rule", view->alert.rule_id, true);
+    add_detail_field(&detection, "Detection signal",
+                     view->alert.evidence[0] == '\0' ? "Unavailable" : view->alert.evidence,
+                     false);
+
+    add_detail_field(&evidence, "Parent SHA-256", view->alert.parent_sha256, true);
+    add_detail_field(&evidence, "Grandparent process name", view->alert.grandparent_comm, true);
     if (view->alert.grandparent_pid > 0) {
         snprintf(grandparent_pid, sizeof grandparent_pid, "%d", view->alert.grandparent_pid);
-        add_detail_field(details, "Grandparent PID", grandparent_pid, true);
+        add_detail_field(&evidence, "Grandparent PID", grandparent_pid, true);
     }
-    add_detail_field(details, "Grandparent executable", view->alert.grandparent_exe, true);
-    add_detail_field(details, "TTY", view->alert.tty, true);
+    add_detail_field(&evidence, "Grandparent executable", view->alert.grandparent_exe, true);
     if (view->alert.ssh_origin)
-        add_detail_field(details, "SSH origin", "Yes", false);
-
-    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Execution"), false, false, 0);
-    add_detail_field(details, blocked ? "Attempted executable" : "Executable",
-                     view->alert.exe, true);
-    add_detail_field(details, "Command line", view->alert.cmdline, true);
-    if (blocked)
-        add_detail_field(details, "Launcher executable", view->alert.launcher_exe, true);
-
-    if (view->alert.systemd_unit[0] != '\0' || view->alert.cgroup_path[0] != '\0' ||
-        view->alert.container_id[0] != '\0' || view->alert.pid_namespace != 0 ||
-        view->alert.mount_namespace != 0) {
-        gtk_box_pack_start(GTK_BOX(details), new_detail_section("Workload"), false, false, 0);
-        add_detail_field(details, "Systemd unit", view->alert.systemd_unit, true);
-        if (view->alert.container_id[0] != '\0') {
-            char container[MS_CONTAINER_ID_BYTES + MS_CONTAINER_RUNTIME_BYTES + 8U];
-            snprintf(container, sizeof container, "%s%s%s", view->alert.container_id,
-                     view->alert.container_runtime[0] == '\0' ? "" : " · ",
-                     view->alert.container_runtime);
-            add_detail_field(details, "Container", container, true);
-        }
-        add_detail_field(details, "Cgroup", view->alert.cgroup_path, true);
+        add_detail_field(&evidence, "SSH origin", "Yes", false);
+    add_detail_field(&evidence, "Systemd unit", view->alert.systemd_unit, true);
+    if (view->alert.container_id[0] != '\0') {
+        snprintf(container, sizeof container, "%s%s%s", view->alert.container_id,
+                 view->alert.container_runtime[0] == '\0' ? "" : " · ",
+                 view->alert.container_runtime);
+        add_detail_field(&evidence, "Container", container, true);
+    }
+    add_detail_field(&evidence, "Cgroup", view->alert.cgroup_path, true);
+    if (view->alert.pid_namespace != 0 || view->alert.mount_namespace != 0) {
         snprintf(namespace_text, sizeof namespace_text, "PID %llu · mount %llu",
                  (unsigned long long)view->alert.pid_namespace,
                  (unsigned long long)view->alert.mount_namespace);
-        add_detail_field(details, "Namespaces", namespace_text, true);
+        add_detail_field(&evidence, "Namespaces", namespace_text, true);
     }
-
-    if (view->alert.target_pid > 0 || view->alert.target_namespace_pid > 0 ||
-        view->alert.target_exe[0] != '\0' || view->alert.bytes_written > 0) {
-        gtk_box_pack_start(GTK_BOX(details), new_detail_section("Target"), false, false, 0);
-        if (view->alert.target_pid > 0) {
-            snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
-            add_detail_field(details, "Target PID", target_pid, true);
-        }
-        if (view->alert.target_namespace_pid > 0) {
-            snprintf(target_namespace_pid, sizeof target_namespace_pid, "%d",
-                     view->alert.target_namespace_pid);
-            add_detail_field(details, "Target namespace PID", target_namespace_pid, true);
-        }
-        add_detail_field(details, "Target executable", view->alert.target_exe, true);
-        if (view->alert.bytes_written > 0) {
-            snprintf(bytes_written, sizeof bytes_written, "%llu",
-                     (unsigned long long)view->alert.bytes_written);
-            add_detail_field(details, "Bytes written", bytes_written, true);
-        }
+    if (view->alert.target_pid > 0) {
+        snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
+        add_detail_field(&evidence, "Target PID", target_pid, true);
     }
-
-    gtk_box_pack_start(GTK_BOX(details), new_detail_section("Detection"), false, false, 0);
-    add_detail_field(details, "Outcome", outcome, false);
-    snprintf(alert_id, sizeof alert_id, "%lld", (long long)view->alert.id);
-    add_detail_field(details, "Alert ID", alert_id, true);
-    add_detail_field(details, "Rule", view->alert.rule_id, true);
-    add_detail_field(details, "Detection signal", view->alert.evidence, false);
+    if (view->alert.target_namespace_pid > 0) {
+        snprintf(target_namespace_pid, sizeof target_namespace_pid, "%d",
+                 view->alert.target_namespace_pid);
+        add_detail_field(&evidence, "Target namespace PID", target_namespace_pid, true);
+    }
+    add_detail_field(&evidence, "Target executable", view->alert.target_exe, true);
+    if (view->alert.bytes_written > 0) {
+        snprintf(bytes_written, sizeof bytes_written, "%llu",
+                 (unsigned long long)view->alert.bytes_written);
+        add_detail_field(&evidence, "Bytes written", bytes_written, true);
+    }
     if (view->alert.arguments_truncated)
-        add_detail_field(details, "Arguments truncated",
+        add_detail_field(&evidence, "Arguments truncated",
                          "Yes — captured command line is incomplete", false);
-    if (view->alert.enrichment_incomplete)
-        add_detail_field(details, "Evidence completeness",
-                         "Some process details were unavailable", false);
-    add_class(details_button, "memspy-details-toggle");
+    add_detail_field(&evidence, "Evidence completeness",
+                     view->alert.enrichment_incomplete ?
+                     "Some process details were unavailable" : "Complete", false);
+
+    add_class(details_grid, "memspy-detail-grid");
+    gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(details_grid), GTK_SELECTION_NONE);
+    gtk_flow_box_set_min_children_per_line(GTK_FLOW_BOX(details_grid), 1);
+    gtk_flow_box_set_max_children_per_line(GTK_FLOW_BOX(details_grid), 2);
+    gtk_flow_box_set_column_spacing(GTK_FLOW_BOX(details_grid), 10);
+    gtk_flow_box_set_row_spacing(GTK_FLOW_BOX(details_grid), 10);
+    gtk_container_add(GTK_CONTAINER(details_grid), identity.container);
+    gtk_container_add(GTK_CONTAINER(details_grid), execution.container);
+    gtk_container_add(GTK_CONTAINER(details_grid), detection.container);
+    gtk_container_add(GTK_CONTAINER(details_grid), evidence.container);
+    add_class(hide_button, "memspy-details-toggle");
     add_class(details_revealer, "memspy-incident-details");
-    gtk_widget_set_hexpand(details_button, true);
-    gtk_widget_set_halign(details_button, GTK_ALIGN_FILL);
-    atk_object_set_name(gtk_widget_get_accessible(details_button), "View incident details");
+    gtk_box_pack_start(GTK_BOX(details), details_grid, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details), hide_button, false, false, 0);
     gtk_revealer_set_transition_type(GTK_REVEALER(details_revealer),
                                      GTK_REVEALER_TRANSITION_TYPE_NONE);
     gtk_container_add(GTK_CONTAINER(details_revealer), details);
     g_signal_connect(details_button, "toggled", G_CALLBACK(incident_details_toggled),
                      details_revealer);
-    gtk_box_pack_start(GTK_BOX(content), details_button, false, false, 0);
+    g_signal_connect(hide_button, "clicked", G_CALLBACK(hide_incident_details),
+                     details_button);
     gtk_box_pack_start(GTK_BOX(content), details_revealer, false, false, 0);
     gtk_container_add(GTK_CONTAINER(row), content);
     add_class(row, "memspy-alert-row");
@@ -447,6 +527,7 @@ ms_window_new(GtkApplication *application)
     GtkWidget *detector_row;
     GtkWidget *response_row;
     GtkWidget *response_box;
+    GtkWidget *status_separator;
 
     window->window = application == NULL ? gtk_window_new(GTK_WINDOW_TOPLEVEL) :
         gtk_application_window_new(application);
@@ -464,9 +545,10 @@ ms_window_new(GtkApplication *application)
     atk_object_set_name(gtk_widget_get_accessible(window->window), "Fileless malware alerts");
     add_class(window->window, "memspy-window");
 
-    window->status_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
+    window->status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);
     detector_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     response_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
+    status_separator = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
     window->status_icon = gtk_image_new_from_icon_name("memspy-offline-symbolic",
                                                        GTK_ICON_SIZE_BUTTON);
     add_class(window->status_icon, "memspy-state-icon");
@@ -495,7 +577,6 @@ ms_window_new(GtkApplication *application)
     gtk_label_set_xalign(GTK_LABEL(window->response_error), 0.0F);
     gtk_label_set_line_wrap(GTK_LABEL(window->response_label), true);
     gtk_label_set_line_wrap(GTK_LABEL(window->response_error), true);
-    gtk_widget_set_size_request(window->response_error, -1, 34);
     add_class(response_title, "memspy-response-title");
     add_class(window->response_label, "memspy-response-state");
     add_class(window->response_error, "memspy-response-error");
@@ -504,8 +585,14 @@ ms_window_new(GtkApplication *application)
     gtk_box_pack_start(GTK_BOX(response_box), window->response_error, false, false, 0);
     gtk_box_pack_start(GTK_BOX(response_row), response_box, true, true, 0);
     gtk_box_pack_end(GTK_BOX(response_row), window->response_switch, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(window->status_box), detector_row, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(window->status_box), response_row, false, false, 0);
+    gtk_widget_set_hexpand(detector_row, true);
+    gtk_widget_set_hexpand(response_row, true);
+    add_class(detector_row, "memspy-status-section");
+    add_class(response_row, "memspy-status-section");
+    add_class(status_separator, "memspy-status-separator");
+    gtk_box_pack_start(GTK_BOX(window->status_box), detector_row, true, true, 0);
+    gtk_box_pack_start(GTK_BOX(window->status_box), status_separator, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(window->status_box), response_row, true, true, 0);
     g_signal_connect(window->response_switch, "notify::active",
                      G_CALLBACK(response_toggled), window);
     add_class(window->status_box, "memspy-status-banner");
@@ -601,7 +688,7 @@ ms_window_set_health(struct ms_window *window, const struct ms_health *health)
         set_status(window, "Monitoring active", "Kernel probes and alert storage are healthy",
                    "memspy-healthy-symbolic", "memspy-health-healthy");
     else if (health->state == MS_HEALTH_FAILED)
-        set_status(window, "Monitoring failed", "Detection is currently unavailable",
+        set_status(window, "Monitoring stopped", "Detection is currently unavailable",
                    "memspy-offline-symbolic", "memspy-health-offline");
     else
         set_status(window, "Monitoring degraded", "Detection continues with reduced coverage",

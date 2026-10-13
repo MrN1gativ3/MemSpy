@@ -403,8 +403,12 @@ static void
 load_css(void)
 {
     GtkCssProvider *provider = gtk_css_provider_new();
+    GtkSettings *settings = gtk_settings_get_default();
     const char *installed = "/opt/memspy/share/memspy/memspy-ui.css";
     const char *path = g_file_test(installed, G_FILE_TEST_IS_REGULAR) ? installed : "data/memspy-ui.css";
+
+    if (settings != NULL)
+        g_object_set(settings, "gtk-application-prefer-dark-theme", true, NULL);
     gtk_css_provider_load_from_path(provider, path, NULL);
     gtk_style_context_add_provider_for_screen(gdk_screen_get_default(),
         GTK_STYLE_PROVIDER(provider), GTK_STYLE_PROVIDER_PRIORITY_APPLICATION);
