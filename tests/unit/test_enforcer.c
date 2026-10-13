@@ -339,6 +339,17 @@ test_remove_pins_preserves_unrelated_objects(void)
     g_string_free(fake.calls, true);
 }
 
+static void
+test_bpf_lsm_must_be_active(void)
+{
+    g_assert_true(ms_enforcer_lsm_list_has_bpf("lockdown,capability,bpf\n"));
+    g_assert_true(ms_enforcer_lsm_list_has_bpf("bpf,apparmor"));
+    g_assert_false(ms_enforcer_lsm_list_has_bpf(
+        "lockdown,capability,landlock,yama,apparmor,ima,evm"));
+    g_assert_false(ms_enforcer_lsm_list_has_bpf("capability,bpfilter,apparmor"));
+    g_assert_false(ms_enforcer_lsm_list_has_bpf(NULL));
+}
+
 int
 main(int argc, char **argv)
 {
@@ -350,5 +361,6 @@ main(int argc, char **argv)
     g_test_add_func("/enforcer/replace", test_replaces_incompatible_without_gap);
     g_test_add_func("/enforcer/counters", test_poll_updates_counters);
     g_test_add_func("/enforcer/remove-pins", test_remove_pins_preserves_unrelated_objects);
+    g_test_add_func("/enforcer/bpf-lsm-active", test_bpf_lsm_must_be_active);
     return g_test_run();
 }

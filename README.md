@@ -224,6 +224,8 @@ cat /sys/kernel/security/lsm
 
 The probe prints `Detection and response available` on a capable host. Otherwise it prints `Detection available; response unavailable: ...` and exits with status 3 without disabling detection. BPF LSM normally appears as `bpf` in `/sys/kernel/security/lsm`; MemSpy does not modify kernel boot parameters.
 
+If `bpf` is absent, enable it in the boot loader's `lsm=` list while preserving the modules already reported by `/sys/kernel/security/lsm`, then reboot. A loaded or pinned BPF LSM program is not active unless that list contains `bpf`.
+
 Each non-comment line in `/etc/memspy/response-allowlist.conf` is an absolute executable path. An entry exempts that launcher from all `memfd` execution blocking, so add only a narrowly reviewed executable. Invalid or unsafe entries are omitted and reported as degraded health instead of silently broadening access. Restart `memspyd` after changes.
 
 Recovery commands:

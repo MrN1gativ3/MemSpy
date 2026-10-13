@@ -68,5 +68,6 @@ void ms_enforcer_free(struct ms_enforcer *enforcer);
 
 bool ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
                                   struct ms_alert *alert, struct ms_error *error);
+bool ms_enforcer_lsm_list_has_bpf(const char *list);
 
 #endif

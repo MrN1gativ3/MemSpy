@@ -75,6 +75,38 @@ set_error(struct ms_error *error, const char *code, const char *format, ...)
     va_end(args);
 }
 
+bool
+ms_enforcer_lsm_list_has_bpf(const char *list)
+{
+    g_auto(GStrv) entries = NULL;
+
+    if (list == NULL)
+        return false;
+    entries = g_strsplit_set(list, ",\n", -1);
+    for (size_t index = 0; entries[index] != NULL; ++index)
+        if (strcmp(g_strstrip(entries[index]), "bpf") == 0)
+            return true;
+    return false;
+}
+
+static bool
+bpf_lsm_active(struct ms_error *error)
+{
+    g_autofree char *list = NULL;
+    g_autoptr(GError) read_error = NULL;
+
+    if (!g_file_get_contents("/sys/kernel/security/lsm", &list, NULL, &read_error)) {
+        set_error(error, "enforcer_lsm", "cannot read active Linux security modules: %s",
+                  read_error->message);
+        return false;
+    }
+    if (ms_enforcer_lsm_list_has_bpf(list))
+        return true;
+    set_error(error, "enforcer_lsm",
+              "BPF LSM is not active; add bpf to the kernel lsm= boot parameter and reboot");
+    return false;
+}
+
 static bool
 read_link(pid_t pid, char *destination, size_t capacity)
 {
@@ -329,9 +361,11 @@ real_adopt(void *context, const char *directory, struct ms_enforcer *owner,
     struct real_instance *instance = g_new0(struct real_instance, 1);
     (void)context;
 
-    instance->owner = owner;
     for (size_t index = 0; index < MAP_COUNT; ++index)
         instance->maps[index] = -1;
+    if (!bpf_lsm_active(error))
+        goto fail;
+    instance->owner = owner;
     for (size_t index = 0; index < MAP_COUNT; ++index) {
         g_autofree char *path = pin_path(directory, map_names[index], false);
         instance->maps[index] = bpf_obj_get(path);
@@ -352,7 +386,8 @@ real_adopt(void *context, const char *directory, struct ms_enforcer *owner,
     return true;
 
 fail:
-    set_error(error, "enforcer_adopt", "cannot adopt compatible MemSpy BPF pins");
+    if (error == NULL || error->message[0] == '\0')
+        set_error(error, "enforcer_adopt", "cannot adopt compatible MemSpy BPF pins");
     for (size_t index = 0; index < LINK_COUNT; ++index)
         bpf_link__destroy(instance->links[index]);
     for (size_t index = 0; index < MAP_COUNT; ++index)
@@ -391,6 +426,8 @@ real_create(void *context, struct ms_enforcer *owner, void **output,
 
     for (size_t index = 0; index < MAP_COUNT; ++index)
         instance->maps[index] = -1;
+    if (!bpf_lsm_active(error))
+        goto fail;
     instance->owner = owner;
     instance->skeleton = memspy_enforce_bpf__open();
     if (instance->skeleton == NULL) {
