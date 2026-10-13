@@ -143,7 +143,7 @@ MEMSPY_LAB_ACK=disposable-offline-vm \
   ./tools/memspy_lab_runner.py /path/to/samples /path/to/results
 ```
 
-The runner never downloads or uploads samples. It refuses root, bare-metal, connected, shared-folder, unhealthy-detector, and response-enabled environments; then runs each copied artifact in a resource-limited transient user-systemd unit for at most 30 seconds. It writes `results.json` and a publication-ready `report.md`. These controls reduce risk but are not a containment boundary for a kernel exploit. See [the 26 researched sample hashes and full lab procedure](docs/malware-sample-research.md).
+The runner never downloads or uploads samples. It refuses root, bare-metal, connected, shared-folder, unhealthy-detector, and response-enabled environments; then runs each copied artifact in a resource-limited transient user-systemd unit for at most 30 seconds. It writes `results.json` and a publication-ready `report.md`. These controls reduce risk but are not a containment boundary for a kernel exploit. See [the 26 researched hashes (14 behavior-bearing candidates) and full lab procedure](docs/malware-sample-research.md).
 
 For a release-style install-layout check:
 
