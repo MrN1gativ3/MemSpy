@@ -194,6 +194,9 @@ test('build-portability', find_program('sh'),
             meson.project_source_root() / 'src/daemon/enforcer.c',
             meson.project_source_root() / 'src/daemon/main.c'])
 
+test('lab-runner', find_program('python3'),
+     args: [meson.project_source_root() / 'tests/package/test_lab_runner.py'])
+
 if desktop_enabled
 ui_state_test = executable(
   'test-ui-state',
