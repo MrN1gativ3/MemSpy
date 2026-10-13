@@ -460,7 +460,8 @@ test_alert_missing_and_long_fields(void)
     alert.ppid = 0;
     alert.enrichment_incomplete = true;
     g_assert_true(ms_window_add_alert(window, &alert));
-    g_assert_cmpuint(label_text_count(widget, "Unavailable"), >=, 4);
+    g_assert_cmpuint(label_text_count(widget, "Unavailable"), ==, 3);
+    g_assert_true(has_label_text(widget, "Unavailable · PID 4321"));
     g_assert_false(has_label_text(widget, "Parent process name"));
     g_assert_true(has_label_text(widget, "Some process details were unavailable"));
     command = find_label_widget(widget, alert.cmdline);
