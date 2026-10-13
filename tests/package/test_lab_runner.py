@@ -60,15 +60,19 @@ class LabRunnerTest(unittest.TestCase):
                   {"id": 10, "rule_id": "MEMFD_EXEC"}]
         self.assertEqual(lab.new_alerts(alerts, 10), alerts[:2])
 
-    def test_sandbox_has_cgroup_timeout_and_no_network_families(self):
+    def test_sandbox_uses_user_manager_compatible_isolation(self):
         command = lab._sandbox_command(pathlib.Path("/run/user/1000/sample"),
                                        pathlib.Path("/run/user/1000/lab"), "memspy-lab-test")
         self.assertIn("--property=KillMode=control-group", command)
         self.assertIn("--property=RuntimeMaxSec=35", command)
         self.assertIn("--property=RestrictAddressFamilies=AF_UNIX", command)
         self.assertIn("--property=NoNewPrivileges=yes", command)
-        self.assertIn("--property=PrivateDevices=yes", command)
+        self.assertIn("--property=ProtectSystem=strict", command)
+        self.assertIn("--property=ProtectHome=yes", command)
         self.assertIn("--property=RestrictNamespaces=yes", command)
+        self.assertNotIn("--property=PrivateDevices=yes", command)
+        self.assertNotIn("--property=ProtectKernelLogs=yes", command)
+        self.assertNotIn("--property=ProtectKernelModules=yes", command)
 
     def test_writes_json_and_markdown_results(self):
         result = {

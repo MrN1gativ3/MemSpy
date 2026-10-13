@@ -45,25 +45,32 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
     return alert;
 }
 
-static bool
-has_button_label(GtkWidget *widget, const char *text)
+static GtkWidget *
+find_button_label(GtkWidget *widget, const char *text)
 {
     GList *children;
     GList *item;
 
     if (GTK_IS_BUTTON(widget) && g_strcmp0(gtk_button_get_label(GTK_BUTTON(widget)), text) == 0)
-        return true;
+        return widget;
     if (!GTK_IS_CONTAINER(widget))
-        return false;
+        return NULL;
     children = gtk_container_get_children(GTK_CONTAINER(widget));
     for (item = children; item != NULL; item = item->next) {
-        if (has_button_label(GTK_WIDGET(item->data), text)) {
+        GtkWidget *result = find_button_label(GTK_WIDGET(item->data), text);
+        if (result != NULL) {
             g_list_free(children);
-            return true;
+            return result;
         }
     }
     g_list_free(children);
-    return false;
+    return NULL;
+}
+
+static bool
+has_button_label(GtkWidget *widget, const char *text)
+{
+    return find_button_label(widget, text) != NULL;
 }
 
 struct label_search {
@@ -306,6 +313,8 @@ test_alert_outcomes_and_grouped_process_details(void)
     struct ms_alert blocked = fixture_alert(2, MS_SEVERITY_HIGH,
         "fixture --blocked 'argument with spaces'");
     GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *details_button;
+    GtkWidget *details_revealer;
 
     detected.action = MS_ALERT_DETECTED;
     blocked.action = MS_ALERT_BLOCKED;
@@ -329,7 +338,20 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(ms_window_add_alert(window, &blocked));
     g_assert_true(has_label_text(widget, "Detected"));
     g_assert_true(has_label_text(widget, "Blocked"));
-    g_assert_true(has_label_text(widget, "Process details"));
+    details_button = find_button_label(widget, "View incident details ▾");
+    g_assert_nonnull(details_button);
+    details_revealer = find_style_class(widget, "memspy-incident-details");
+    g_assert_true(GTK_IS_REVEALER(details_revealer));
+    g_assert_false(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
+    g_assert_cmpuint(style_class_count(widget, "memspy-incident-summary"), ==, 2);
+    gtk_button_clicked(GTK_BUTTON(details_button));
+    g_assert_cmpstr(gtk_button_get_label(GTK_BUTTON(details_button)), ==,
+                    "Hide incident details ▴");
+    g_assert_true(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
+    gtk_button_clicked(GTK_BUTTON(details_button));
+    g_assert_cmpstr(gtk_button_get_label(GTK_BUTTON(details_button)), ==,
+                    "View incident details ▾");
+    g_assert_false(gtk_revealer_get_reveal_child(GTK_REVEALER(details_revealer)));
     g_assert_true(has_label_text(widget, "Identity"));
     g_assert_true(has_label_text(widget, "Execution"));
     g_assert_true(has_label_text(widget, "Workload"));
@@ -356,6 +378,7 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Target namespace PID"));
     g_assert_true(has_label_text(widget, "Bytes written"));
     g_assert_true(has_label_text(widget, "Outcome"));
+    g_assert_true(has_label_text(widget, "Alert ID"));
     g_assert_true(has_label_text(widget, "Rule"));
     g_assert_true(has_label_text(widget, "Detection signal"));
     g_assert_true(has_label_text(widget, "Arguments truncated"));

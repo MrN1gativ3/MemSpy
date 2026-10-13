@@ -157,6 +157,19 @@ new_detail_section(const char *title)
 }
 
 static void
+incident_details_toggled(GtkToggleButton *button, gpointer userdata)
+{
+    GtkRevealer *details = userdata;
+    const bool expanded = gtk_toggle_button_get_active(button);
+    const char *name = expanded ? "Hide incident details" : "View incident details";
+
+    gtk_button_set_label(GTK_BUTTON(button), expanded ?
+                         "Hide incident details ▴" : "View incident details ▾");
+    atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(button)), name);
+    gtk_revealer_set_reveal_child(details, expanded);
+}
+
+static void
 update_filter_labels(struct ms_window *window)
 {
     size_t high = 0;
@@ -195,9 +208,10 @@ create_alert_row(struct alert_view *view)
     GtkWidget *rule_label = gtk_label_new(view->alert.rule_id);
     GtkWidget *timestamp;
     GtkWidget *explanation = new_wrapping_label(view->alert.explanation);
-    GtkWidget *process;
-    GtkWidget *expander = gtk_expander_new("Process details");
+    GtkWidget *summary = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *details_button = gtk_toggle_button_new_with_label("View incident details ▾");
     GtkWidget *details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *details_revealer = gtk_revealer_new();
     GDateTime *date = g_date_time_new_from_unix_local(view->alert.timestamp_utc);
     char *time_text = date == NULL ? g_strdup("Time unavailable") :
         g_date_time_format(date, "%x · %X");
@@ -209,10 +223,15 @@ create_alert_row(struct alert_view *view)
     char target_namespace_pid[32];
     char namespace_text[96];
     char bytes_written[32];
+    char alert_id[32];
     char accessible_name[256];
 
     snprintf(process_text, sizeof process_text, "%s · PID %d", view->alert.comm, view->alert.pid);
-    process = new_wrapping_label(process_text);
+    if (view->alert.username[0] != '\0')
+        snprintf(user_text, sizeof user_text, "%s · UID %u", view->alert.username,
+                 (unsigned int)view->alert.uid);
+    else
+        snprintf(user_text, sizeof user_text, "UID %u", (unsigned int)view->alert.uid);
     timestamp = gtk_label_new(time_text);
     gtk_label_set_xalign(GTK_LABEL(timestamp), 1.0F);
     add_class(timestamp, "memspy-timestamp");
@@ -235,21 +254,28 @@ create_alert_row(struct alert_view *view)
     gtk_box_pack_end(GTK_BOX(heading), timestamp, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), heading, false, false, 0);
     gtk_box_pack_start(GTK_BOX(content), explanation, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(content), process, false, false, 0);
+
+    add_class(summary, "memspy-incident-summary");
+    add_detail_field(summary, "User", user_text, false);
+    add_detail_field(summary, "Process", process_text, true);
+    add_detail_field(summary, blocked ? "Attempted executable" : "Executable",
+                     view->alert.exe, true);
+    add_detail_field(summary, "Command line", view->alert.cmdline, true);
+    add_detail_field(summary, "Parent process name", view->alert.parent_comm, true);
+    if (view->alert.ppid > 0) {
+        snprintf(parent_pid, sizeof parent_pid, "%d", view->alert.ppid);
+        add_detail_field(summary, "Parent PID", parent_pid, true);
+    }
+    add_detail_field(summary, "Parent executable", view->alert.parent_exe, true);
+    add_detail_field(summary, "Parent SHA-256", view->alert.parent_sha256, true);
+    gtk_box_pack_start(GTK_BOX(content), summary, false, false, 0);
 
     gtk_box_pack_start(GTK_BOX(details), new_detail_section("Identity"), false, false, 0);
-    if (view->alert.username[0] != '\0')
-        snprintf(user_text, sizeof user_text, "%s · UID %u", view->alert.username,
-                 (unsigned int)view->alert.uid);
-    else
-        snprintf(user_text, sizeof user_text, "UID %u", (unsigned int)view->alert.uid);
     add_detail_field(details, "User", user_text, false);
     add_detail_field(details, "Process", process_text, true);
     add_detail_field(details, "Parent process name", view->alert.parent_comm, true);
-    if (view->alert.ppid > 0) {
-        snprintf(parent_pid, sizeof parent_pid, "%d", view->alert.ppid);
+    if (view->alert.ppid > 0)
         add_detail_field(details, "Parent PID", parent_pid, true);
-    }
     add_detail_field(details, "Parent executable", view->alert.parent_exe, true);
     add_detail_field(details, "Parent SHA-256", view->alert.parent_sha256, true);
     add_detail_field(details, "Grandparent process name", view->alert.grandparent_comm, true);
@@ -310,6 +336,8 @@ create_alert_row(struct alert_view *view)
 
     gtk_box_pack_start(GTK_BOX(details), new_detail_section("Detection"), false, false, 0);
     add_detail_field(details, "Outcome", outcome, false);
+    snprintf(alert_id, sizeof alert_id, "%lld", (long long)view->alert.id);
+    add_detail_field(details, "Alert ID", alert_id, true);
     add_detail_field(details, "Rule", view->alert.rule_id, true);
     add_detail_field(details, "Detection signal", view->alert.evidence, false);
     if (view->alert.arguments_truncated)
@@ -318,8 +346,18 @@ create_alert_row(struct alert_view *view)
     if (view->alert.enrichment_incomplete)
         add_detail_field(details, "Evidence completeness",
                          "Some process details were unavailable", false);
-    gtk_container_add(GTK_CONTAINER(expander), details);
-    gtk_box_pack_start(GTK_BOX(content), expander, false, false, 0);
+    add_class(details_button, "memspy-details-toggle");
+    add_class(details_revealer, "memspy-incident-details");
+    gtk_widget_set_hexpand(details_button, true);
+    gtk_widget_set_halign(details_button, GTK_ALIGN_FILL);
+    atk_object_set_name(gtk_widget_get_accessible(details_button), "View incident details");
+    gtk_revealer_set_transition_type(GTK_REVEALER(details_revealer),
+                                     GTK_REVEALER_TRANSITION_TYPE_NONE);
+    gtk_container_add(GTK_CONTAINER(details_revealer), details);
+    g_signal_connect(details_button, "toggled", G_CALLBACK(incident_details_toggled),
+                     details_revealer);
+    gtk_box_pack_start(GTK_BOX(content), details_button, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(content), details_revealer, false, false, 0);
     gtk_container_add(GTK_CONTAINER(row), content);
     add_class(row, "memspy-alert-row");
     add_class(row, view->alert.severity == MS_SEVERITY_HIGH ?

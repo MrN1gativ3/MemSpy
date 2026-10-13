@@ -38,6 +38,8 @@
 
 .memspy-response-error { color: #C01C28; }
 .memspy-detail-section { margin-top: 6px; }
+.memspy-incident-summary { margin-top: 4px; }
+.memspy-details-toggle { margin-top: 6px; padding: 7px 12px; }
 
 .memspy-outcome {
   padding: 2px 7px;
