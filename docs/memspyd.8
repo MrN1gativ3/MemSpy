@@ -6,7 +6,7 @@ memspyd \- detect high-confidence fileless malware behavior with eBPF
 .RI [ options ]
 .SH DESCRIPTION
 .B memspyd
-loads eBPF probes, evaluates local detection rules, retains alerts for 30 days, publishes structured journal records, and exposes a local Unix socket API. Optional response mode blocks only memfd-backed execution. It does not kill, quarantine, inspect payload memory, or open a network listener.
+loads eBPF probes, evaluates local detection rules, retains alerts for 30 days, publishes structured journal records, and exposes a local Unix socket API. Optional BPF LSM response denies supported memory-backed or deleted-image execution and cross-process memory modification primitives. It does not kill, quarantine, inspect payload memory, or open a network listener.
 .SH OPTIONS
 .TP
 .BI --config " PATH"
@@ -42,7 +42,7 @@ Local API, mode 0660 and group memspy-ui. Response changes require PolicyKit aut
 .SH ALERT OUTPUT
 Every stored alert is also submitted to journald with stable MEMSPY_RULE, MEMSPY_SEVERITY, MEMSPY_ACTION, MEMSPY_PID, MEMSPY_UID, MEMSPY_ALERT_ID, and MEMSPY_ALERT_JSON fields. Journal failure degrades health without blocking storage or API publication.
 .SH COVERAGE
-PROC_MEM_WRITE is emitted only after a successful write through a procfs process-memory descriptor validated in eBPF. MemSpy records the host TGID and namespace-visible PID; process exit or host-PID reuse before enrichment produces an incomplete observation rather than a guessed alert. Process, parent, workload, container, terminal, SSH-origin, and namespace evidence is bounded and may be unavailable for short-lived processes.
+PROC_MEM_WRITE is emitted only after a successful write through a procfs process-memory descriptor validated in eBPF. MemSpy records the host TGID and namespace-visible PID; process exit or host-PID reuse before enrichment produces an incomplete observation rather than a guessed alert. Process, parent, workload, container, terminal, SSH-origin, and namespace evidence is bounded and may be unavailable for short-lived processes. Applicable actor, executed-image, target, pre-exec launcher, and parent images are hashed in one pass up to 128 MiB. SHA-256 is primary and MD5 is retained for IOC compatibility; exact failure statuses are stored when hashing is not possible.
 .SH STORAGE FAILURE
 If the SQLite database cannot open, the service preserves it, continues bounded live detection in degraded health, and retries storage every 60 seconds.
 .SH SECURITY

@@ -45,7 +45,7 @@ The application is installed under `/opt/memspy`. Configuration remains in `/etc
 
 Log out and back in once after a GUI installation, then run `memspy-ui`.
 
-## CLI endpoint
+## CLI
 
 `memspyctl` is the primary interface for headless servers:
 
@@ -59,6 +59,8 @@ memspyctl response off
 ```
 
 Use `--json` for automation. MemSpy exposes no network listener; the CLI and GTK application use the local Unix socket at `/run/memspy/memspy.sock`.
+
+Expanded incidents show the applicable actor, executed image, target, launcher, and parent paths. MemSpy records MD5 for IOC compatibility, SHA-256 as the primary hash, and an exact reason when an image cannot be hashed. Images larger than 128 MiB are not hashed.
 
 ## Response allowlist
 

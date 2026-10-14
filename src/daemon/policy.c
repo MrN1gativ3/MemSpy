@@ -47,11 +47,16 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
     copy_string(alert->comm, sizeof alert->comm, observation->comm);
     copy_string(alert->username, sizeof alert->username, observation->username);
     copy_string(alert->exe, sizeof alert->exe, observation->exe);
+    copy_string(alert->exe_md5, sizeof alert->exe_md5, observation->exe_md5);
+    copy_string(alert->exe_sha256, sizeof alert->exe_sha256, observation->exe_sha256);
+    alert->exe_hash_status = observation->exe_hash_status;
     copy_string(alert->cmdline, sizeof alert->cmdline, observation->cmdline);
     copy_string(alert->parent_comm, sizeof alert->parent_comm, observation->parent_comm);
     copy_string(alert->parent_exe, sizeof alert->parent_exe, observation->parent_exe);
+    copy_string(alert->parent_md5, sizeof alert->parent_md5, observation->parent_md5);
     copy_string(alert->parent_sha256, sizeof alert->parent_sha256,
                 observation->parent_sha256);
+    alert->parent_hash_status = observation->parent_hash_status;
     copy_string(alert->grandparent_comm, sizeof alert->grandparent_comm,
                 observation->grandparent_comm);
     copy_string(alert->grandparent_exe, sizeof alert->grandparent_exe,
@@ -63,6 +68,10 @@ fill_common_alert(const struct ms_observation *observation, struct ms_alert *ale
                 observation->container_runtime);
     copy_string(alert->tty, sizeof alert->tty, observation->tty);
     copy_string(alert->target_exe, sizeof alert->target_exe, observation->target_exe);
+    copy_string(alert->target_md5, sizeof alert->target_md5, observation->target_md5);
+    copy_string(alert->target_sha256, sizeof alert->target_sha256,
+                observation->target_sha256);
+    alert->target_hash_status = observation->target_hash_status;
 }
 
 static void

@@ -175,6 +175,49 @@ add_detail_field(struct detail_section *section, const char *title, const char *
     return content;
 }
 
+static const char *
+hash_status_text(enum ms_hash_status status)
+{
+    switch (status) {
+    case MS_HASH_COMPLETE: return "Hash complete";
+    case MS_HASH_PROCESS_EXITED: return "Process exited before hashing";
+    case MS_HASH_IMAGE_UNAVAILABLE: return "Executable image was unavailable";
+    case MS_HASH_NO_FILESYSTEM_PATH: return "No filesystem path is available";
+    case MS_HASH_TOO_LARGE: return "Image exceeds the 128 MiB hash limit";
+    case MS_HASH_READ_ERROR: return "Executable image could not be read";
+    case MS_HASH_IDENTITY_CHANGED: return "Process identity changed before hashing";
+    case MS_HASH_BLOCKED_BEFORE_OPEN: return "Blocked before executable image opened";
+    case MS_HASH_NOT_COLLECTED: return "Not collected";
+    }
+    return "Not collected";
+}
+
+static void
+add_evidence_group(struct detail_section *section, const char *title, const char *path,
+                   const char *md5, const char *sha256, enum ms_hash_status status)
+{
+    GtkWidget *heading;
+
+    if ((path == NULL || path[0] == '\0') && (md5 == NULL || md5[0] == '\0') &&
+        (sha256 == NULL || sha256[0] == '\0') && status == MS_HASH_NOT_COLLECTED)
+        return;
+    heading = new_wrapping_label(title);
+    add_class(heading, "memspy-evidence-role");
+    gtk_grid_attach(GTK_GRID(section->grid), heading, 0, section->row++, 2, 1);
+    add_detail_field(section, "Path",
+                     path == NULL || path[0] == '\0' ? "Unavailable" : path, true);
+    add_detail_field(section, "MD5", md5, true);
+    add_detail_field(section, "SHA-256", sha256, true);
+    add_detail_field(section, "Collection status", hash_status_text(status), false);
+}
+
+static bool
+is_exec_rule(const char *rule)
+{
+    return strstr(rule, "MEMFD_EXEC") != NULL || strstr(rule, "DELETED_EXEC") != NULL ||
+           strcmp(rule, "INJECTION_CHAIN") == 0;
+}
+
 static void
 incident_details_toggled(GtkToggleButton *button, gpointer userdata)
 {
@@ -351,7 +394,25 @@ create_alert_row(struct alert_view *view)
                      view->alert.evidence[0] == '\0' ? "Unavailable" : view->alert.evidence,
                      false);
 
-    add_detail_field(&evidence, "Parent SHA-256", view->alert.parent_sha256, true);
+    if (is_exec_rule(view->alert.rule_id)) {
+        if (blocked)
+            add_evidence_group(&evidence, "Pre-exec launcher", view->alert.launcher_exe,
+                               view->alert.launcher_md5, view->alert.launcher_sha256,
+                               view->alert.launcher_hash_status);
+        add_evidence_group(&evidence, "Payload / executed image", view->alert.exe,
+                           view->alert.exe_md5, view->alert.exe_sha256,
+                           view->alert.exe_hash_status);
+    } else {
+        add_evidence_group(&evidence, "Actor executable", view->alert.exe,
+                           view->alert.exe_md5, view->alert.exe_sha256,
+                           view->alert.exe_hash_status);
+        add_evidence_group(&evidence, "Target executable", view->alert.target_exe,
+                           view->alert.target_md5, view->alert.target_sha256,
+                           view->alert.target_hash_status);
+    }
+    add_evidence_group(&evidence, "Parent process", view->alert.parent_exe,
+                       view->alert.parent_md5, view->alert.parent_sha256,
+                       view->alert.parent_hash_status);
     add_detail_field(&evidence, "Grandparent process name", view->alert.grandparent_comm, true);
     if (view->alert.grandparent_pid > 0) {
         snprintf(grandparent_pid, sizeof grandparent_pid, "%d", view->alert.grandparent_pid);
@@ -383,7 +444,6 @@ create_alert_row(struct alert_view *view)
                  view->alert.target_namespace_pid);
         add_detail_field(&evidence, "Target namespace PID", target_namespace_pid, true);
     }
-    add_detail_field(&evidence, "Target executable", view->alert.target_exe, true);
     if (view->alert.bytes_written > 0) {
         snprintf(bytes_written, sizeof bytes_written, "%llu",
                  (unsigned long long)view->alert.bytes_written);
@@ -392,9 +452,6 @@ create_alert_row(struct alert_view *view)
     if (view->alert.arguments_truncated)
         add_detail_field(&evidence, "Arguments truncated",
                          "Yes — captured command line is incomplete", false);
-    add_detail_field(&evidence, "Evidence completeness",
-                     view->alert.enrichment_incomplete ?
-                     "Some process details were unavailable" : "Complete", false);
 
     add_class(details_grid, "memspy-detail-grid");
     gtk_flow_box_set_selection_mode(GTK_FLOW_BOX(details_grid), GTK_SELECTION_NONE);
@@ -445,7 +502,7 @@ update_response_control(struct ms_window *window)
                  "Response mode is not supported" : window->response_reason);
         name = text;
     } else if (window->response_active)
-        name = "On — Blocking memfd execution";
+        name = "On — Blocking fileless execution and injection";
     else
         name = "Off — Detection only";
 

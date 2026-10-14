@@ -26,9 +26,21 @@ struct ms_process_evidence {
     bool complete;
 };
 
+struct ms_executable_evidence {
+    char path[MS_PATH_BYTES];
+    char md5[MS_MD5_BYTES];
+    char sha256[MS_SHA256_BYTES];
+    enum ms_hash_status status;
+};
+
 bool ms_process_cgroup_parse(const char *text, struct ms_process_evidence *evidence);
 bool ms_process_evidence_read_at(const char *proc_root, pid_t pid,
                                  struct ms_process_evidence *evidence);
 bool ms_process_evidence_read(pid_t pid, struct ms_process_evidence *evidence);
+bool ms_executable_evidence_read_at(const char *proc_root, pid_t pid,
+                                    uint64_t expected_start_boottime_ns,
+                                    struct ms_executable_evidence *evidence);
+bool ms_executable_evidence_read(pid_t pid, uint64_t expected_start_boottime_ns,
+                                 struct ms_executable_evidence *evidence);
 
 #endif

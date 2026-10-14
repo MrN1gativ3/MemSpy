@@ -239,12 +239,28 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
          observation->syscall_result >= 0 && observation->target.pid > 0 &&
          observation->target.pid != observation->process.pid)) {
         struct ms_process_evidence evidence = {0};
+        struct ms_executable_evidence image = {0};
         if (!ms_process_evidence_read(observation->process.pid, &evidence))
             actor_complete = false;
+        ms_executable_evidence_read(observation->process.pid,
+                                    observation->process.start_boottime_ns, &image);
+        if (image.path[0] != '\0')
+            g_strlcpy(observation->exe, image.path, sizeof observation->exe);
+        g_strlcpy(observation->exe_md5, image.md5, sizeof observation->exe_md5);
+        g_strlcpy(observation->exe_sha256, image.sha256, sizeof observation->exe_sha256);
+        observation->exe_hash_status = image.status;
         observation->ppid = evidence.parent_pid > 0 ? evidence.parent_pid : observation->ppid;
         g_strlcpy(observation->parent_comm, evidence.parent_comm, sizeof observation->parent_comm);
         g_strlcpy(observation->parent_exe, evidence.parent_exe, sizeof observation->parent_exe);
-        g_strlcpy(observation->parent_sha256, evidence.parent_sha256, sizeof observation->parent_sha256);
+        image = (struct ms_executable_evidence){0};
+        if (evidence.parent_pid > 0)
+            ms_executable_evidence_read(evidence.parent_pid, 0, &image);
+        if (image.path[0] != '\0')
+            g_strlcpy(observation->parent_exe, image.path, sizeof observation->parent_exe);
+        g_strlcpy(observation->parent_md5, image.md5, sizeof observation->parent_md5);
+        g_strlcpy(observation->parent_sha256, image.sha256,
+                  sizeof observation->parent_sha256);
+        observation->parent_hash_status = image.status;
         observation->grandparent_pid = evidence.grandparent_pid;
         g_strlcpy(observation->grandparent_comm, evidence.grandparent_comm, sizeof observation->grandparent_comm);
         g_strlcpy(observation->grandparent_exe, evidence.grandparent_exe, sizeof observation->grandparent_exe);
@@ -256,6 +272,19 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
         observation->ssh_origin = evidence.ssh_origin;
         observation->pid_namespace = evidence.pid_namespace;
         observation->mount_namespace = evidence.mount_namespace;
+        if (observation->target.pid > 0) {
+            image = (struct ms_executable_evidence){0};
+            ms_executable_evidence_read(observation->target.pid,
+                                        observation->target.start_boottime_ns, &image);
+            if (image.path[0] != '\0')
+                g_strlcpy(observation->target_exe, image.path,
+                          sizeof observation->target_exe);
+            g_strlcpy(observation->target_md5, image.md5,
+                      sizeof observation->target_md5);
+            g_strlcpy(observation->target_sha256, image.sha256,
+                      sizeof observation->target_sha256);
+            observation->target_hash_status = image.status;
+        }
     }
     observation->enrichment_incomplete = !actor_complete;
     return true;

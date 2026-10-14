@@ -10,7 +10,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MS_PARENT_HASH_LIMIT (128U * 1024U * 1024U)
+#define MS_EXECUTABLE_HASH_LIMIT (128U * 1024U * 1024U)
 #define MS_PROC_READ_LIMIT 8192U
 
 static bool read_text(int directory, const char *name, char *output, size_t capacity)
@@ -60,14 +60,14 @@ static bool hash_executable(int descriptor, char output[MS_SHA256_BYTES])
     ssize_t length;
 
     if (fstat(descriptor, &metadata) != 0 || !S_ISREG(metadata.st_mode) ||
-        metadata.st_size < 0 || (uint64_t)metadata.st_size > MS_PARENT_HASH_LIMIT)
+        metadata.st_size < 0 || (uint64_t)metadata.st_size > MS_EXECUTABLE_HASH_LIMIT)
         return false;
     checksum = g_checksum_new(G_CHECKSUM_SHA256);
     if (checksum == NULL)
         return false;
     while ((length = read(descriptor, buffer, sizeof buffer)) > 0) {
         total += (uint64_t)length;
-        if (total > MS_PARENT_HASH_LIMIT)
+        if (total > MS_EXECUTABLE_HASH_LIMIT)
             return false;
         g_checksum_update(checksum, buffer, (gsize)length);
     }
@@ -75,6 +75,142 @@ static bool hash_executable(int descriptor, char output[MS_SHA256_BYTES])
         return false;
     g_strlcpy(output, g_checksum_get_string(checksum), MS_SHA256_BYTES);
     return true;
+}
+
+static bool
+read_start_boottime_ns(int directory, uint64_t *start_ns)
+{
+    char stat[MS_PROC_READ_LIMIT + 1U];
+    char *cursor;
+    char *save = NULL;
+    unsigned int field = 3;
+    long ticks = sysconf(_SC_CLK_TCK);
+
+    if (ticks <= 0 || !read_text(directory, "stat", stat, sizeof stat))
+        return false;
+    cursor = strrchr(stat, ')');
+    if (cursor == NULL || cursor[1] != ' ')
+        return false;
+    cursor += 2;
+    for (char *token = strtok_r(cursor, " ", &save); token != NULL;
+         token = strtok_r(NULL, " ", &save), ++field) {
+        if (field == 22) {
+            uint64_t value = g_ascii_strtoull(token, NULL, 10);
+            *start_ns = value * 1000000000ULL / (uint64_t)ticks;
+            return true;
+        }
+    }
+    return false;
+}
+
+static enum ms_hash_status
+hash_image(int descriptor, char md5[MS_MD5_BYTES], char sha256[MS_SHA256_BYTES])
+{
+    struct stat before;
+    struct stat after;
+    g_autoptr(GChecksum) md5_sum = NULL;
+    g_autoptr(GChecksum) sha256_sum = NULL;
+    unsigned char buffer[64U * 1024U];
+    uint64_t total = 0;
+    ssize_t length;
+
+    if (fstat(descriptor, &before) != 0 || !S_ISREG(before.st_mode) || before.st_size < 0)
+        return MS_HASH_IMAGE_UNAVAILABLE;
+    if ((uint64_t)before.st_size > MS_EXECUTABLE_HASH_LIMIT)
+        return MS_HASH_TOO_LARGE;
+    md5_sum = g_checksum_new(G_CHECKSUM_MD5);
+    sha256_sum = g_checksum_new(G_CHECKSUM_SHA256);
+    if (md5_sum == NULL || sha256_sum == NULL)
+        return MS_HASH_READ_ERROR;
+    while ((length = read(descriptor, buffer, sizeof buffer)) > 0) {
+        total += (uint64_t)length;
+        if (total > MS_EXECUTABLE_HASH_LIMIT)
+            return MS_HASH_TOO_LARGE;
+        g_checksum_update(md5_sum, buffer, (gsize)length);
+        g_checksum_update(sha256_sum, buffer, (gsize)length);
+    }
+    if (length < 0 || fstat(descriptor, &after) != 0)
+        return MS_HASH_READ_ERROR;
+    if (before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+        before.st_size != after.st_size || before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
+        before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
+        return MS_HASH_IDENTITY_CHANGED;
+    g_strlcpy(md5, g_checksum_get_string(md5_sum), MS_MD5_BYTES);
+    g_strlcpy(sha256, g_checksum_get_string(sha256_sum), MS_SHA256_BYTES);
+    return MS_HASH_COMPLETE;
+}
+
+bool
+ms_executable_evidence_read_at(const char *proc_root, pid_t pid,
+                               uint64_t expected_start_boottime_ns,
+                               struct ms_executable_evidence *evidence)
+{
+    struct ms_executable_evidence result = {0};
+    char name[32];
+    uint64_t start_before = 0;
+    uint64_t start_after = 0;
+    int root;
+    int directory;
+    int executable;
+
+    if (proc_root == NULL || evidence == NULL || pid <= 0)
+        return false;
+    root = open(proc_root, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    if (root < 0)
+        return false;
+    snprintf(name, sizeof name, "%d", pid);
+    directory = openat(root, name, O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    close(root);
+    if (directory < 0) {
+        result.status = MS_HASH_PROCESS_EXITED;
+        *evidence = result;
+        return false;
+    }
+    if (!read_start_boottime_ns(directory, &start_before)) {
+        result.status = MS_HASH_IMAGE_UNAVAILABLE;
+        close(directory);
+        *evidence = result;
+        return false;
+    }
+    if (expected_start_boottime_ns != 0 && start_before != expected_start_boottime_ns) {
+        result.status = MS_HASH_IDENTITY_CHANGED;
+        close(directory);
+        *evidence = result;
+        return false;
+    }
+    if (!read_link(directory, "exe", result.path, sizeof result.path)) {
+        result.status = MS_HASH_IMAGE_UNAVAILABLE;
+        close(directory);
+        *evidence = result;
+        return false;
+    }
+    executable = openat(directory, "exe", O_RDONLY | O_CLOEXEC);
+    if (executable < 0) {
+        result.status = strstr(result.path, "memfd:") != NULL ||
+                        g_str_has_suffix(result.path, " (deleted)") ?
+                        MS_HASH_NO_FILESYSTEM_PATH : MS_HASH_IMAGE_UNAVAILABLE;
+        close(directory);
+        *evidence = result;
+        return false;
+    }
+    result.status = hash_image(executable, result.md5, result.sha256);
+    close(executable);
+    if (!read_start_boottime_ns(directory, &start_after) || start_after != start_before) {
+        result.md5[0] = '\0';
+        result.sha256[0] = '\0';
+        result.status = MS_HASH_IDENTITY_CHANGED;
+    }
+    close(directory);
+    *evidence = result;
+    return result.status == MS_HASH_COMPLETE;
+}
+
+bool
+ms_executable_evidence_read(pid_t pid, uint64_t expected_start_boottime_ns,
+                            struct ms_executable_evidence *evidence)
+{
+    return ms_executable_evidence_read_at("/proc", pid, expected_start_boottime_ns,
+                                          evidence);
 }
 
 static bool parse_parent_pid(const char *stat, pid_t *parent)

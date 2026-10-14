@@ -6,7 +6,7 @@ memspy-ui \- GNOME and KDE indicator and alert viewer for memspyd
 .RI [ --background | --version ]
 .SH DESCRIPTION
 .B memspy-ui
-is an unprivileged GTK application. It shows daemon health, retained High and Medium alerts, bounded process and workload evidence, and native notifications only for High alerts. Its response switch requests PolicyKit authorization and blocks only memfd-backed execution.
+is an unprivileged GTK application. It shows daemon health, retained High and Medium alerts, role-specific executable paths, MD5 and SHA-256 evidence, and native notifications only for High alerts. Its response switch requests PolicyKit authorization before enabling the complete supported response policy.
 .SH OPTIONS
 .TP
 .B --background
@@ -17,7 +17,7 @@ Print the version.
 .SH ACCESS
 The current user must belong to the memspy-ui group. Log out and back in after an administrator adds group membership. GNOME must have its standard AppIndicator support enabled for the panel icon. KDE Plasma uses its built-in StatusNotifier support. The normal application window remains usable without a panel icon.
 .SH SECURITY
-MemSpy never reads administrator credentials; the native PolicyKit agent owns authentication. Alert details can include command lines and process paths for all monitored users. Missing evidence from short-lived processes is shown as unavailable rather than inferred.
+MemSpy never reads administrator credentials; the native PolicyKit agent owns authentication. Alert details can include command lines, process paths, and executable hashes for all monitored users. Missing evidence is shown with its collection reason rather than inferred. MD5 is provided for IOC compatibility; SHA-256 is the primary hash. Executable images larger than 128 MiB are not hashed.
 .SH SEE ALSO
 .BR memspyd (8),
 .BR memspyctl (1)

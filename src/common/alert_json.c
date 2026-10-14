@@ -56,10 +56,35 @@ add_string(json_object *object, const char *name, const char *value, size_t capa
     return true;
 }
 
-static bool
-valid_sha256(const char *value)
+const char *
+ms_hash_status_name(enum ms_hash_status status)
 {
-    const char *end = memchr(value, '\0', MS_SHA256_BYTES);
+    static const char *names[] = {
+        "not_collected", "complete", "process_exited", "image_unavailable",
+        "no_filesystem_path", "too_large", "read_error", "identity_changed",
+        "blocked_before_open",
+    };
+    return status >= MS_HASH_NOT_COLLECTED && status <= MS_HASH_BLOCKED_BEFORE_OPEN ?
+        names[status] : NULL;
+}
+
+static bool
+parse_hash_status(const char *value, enum ms_hash_status *status)
+{
+    for (int candidate = MS_HASH_NOT_COLLECTED;
+         candidate <= MS_HASH_BLOCKED_BEFORE_OPEN; ++candidate) {
+        if (strcmp(value, ms_hash_status_name((enum ms_hash_status)candidate)) == 0) {
+            *status = (enum ms_hash_status)candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool
+valid_hex_hash(const char *value, size_t capacity, size_t digits)
+{
+    const char *end = memchr(value, '\0', capacity);
     size_t length;
 
     if (end == NULL)
@@ -67,15 +92,18 @@ valid_sha256(const char *value)
     length = (size_t)(end - value);
     if (length == 0)
         return true;
-    if (length != 64U)
+    if (length != digits)
         return false;
-    for (size_t index = 0; index < 64U; ++index) {
+    for (size_t index = 0; index < digits; ++index) {
         if (!g_ascii_isdigit(value[index]) &&
             (value[index] < 'a' || value[index] > 'f'))
             return false;
     }
     return true;
 }
+
+static bool valid_md5(const char *value) { return valid_hex_hash(value, MS_MD5_BYTES, 32U); }
+static bool valid_sha256(const char *value) { return valid_hex_hash(value, MS_SHA256_BYTES, 64U); }
 
 json_object *
 ms_alert_to_json(const struct ms_alert *alert)
@@ -86,7 +114,14 @@ ms_alert_to_json(const struct ms_alert *alert)
 
     if (alert == NULL || (severity = severity_name(alert->severity)) == NULL ||
         (action = action_name(alert->action)) == NULL ||
-        !valid_sha256(alert->parent_sha256))
+        ms_hash_status_name(alert->exe_hash_status) == NULL ||
+        ms_hash_status_name(alert->launcher_hash_status) == NULL ||
+        ms_hash_status_name(alert->parent_hash_status) == NULL ||
+        ms_hash_status_name(alert->target_hash_status) == NULL ||
+        !valid_md5(alert->exe_md5) || !valid_sha256(alert->exe_sha256) ||
+        !valid_md5(alert->launcher_md5) || !valid_sha256(alert->launcher_sha256) ||
+        !valid_md5(alert->parent_md5) || !valid_sha256(alert->parent_sha256) ||
+        !valid_md5(alert->target_md5) || !valid_sha256(alert->target_sha256))
         return NULL;
 
     object = json_object_new_object();
@@ -108,16 +143,30 @@ ms_alert_to_json(const struct ms_alert *alert)
     json_object_object_add(object, "bytes_written", json_object_new_uint64(alert->bytes_written));
     json_object_object_add(object, "enrichment_incomplete", json_object_new_boolean(alert->enrichment_incomplete));
     json_object_object_add(object, "arguments_truncated", json_object_new_boolean(alert->arguments_truncated));
+    json_object_object_add(object, "exe_hash_status",
+                           json_object_new_string(ms_hash_status_name(alert->exe_hash_status)));
+    json_object_object_add(object, "launcher_hash_status",
+                           json_object_new_string(ms_hash_status_name(alert->launcher_hash_status)));
+    json_object_object_add(object, "parent_hash_status",
+                           json_object_new_string(ms_hash_status_name(alert->parent_hash_status)));
+    json_object_object_add(object, "target_hash_status",
+                           json_object_new_string(ms_hash_status_name(alert->target_hash_status)));
 
     if (!add_string(object, "rule_id", alert->rule_id, sizeof alert->rule_id) ||
         !add_string(object, "explanation", alert->explanation, sizeof alert->explanation) ||
         !add_string(object, "comm", alert->comm, sizeof alert->comm) ||
         !add_string(object, "username", alert->username, sizeof alert->username) ||
         !add_string(object, "exe", alert->exe, sizeof alert->exe) ||
+        !add_string(object, "exe_md5", alert->exe_md5, sizeof alert->exe_md5) ||
+        !add_string(object, "exe_sha256", alert->exe_sha256, sizeof alert->exe_sha256) ||
         !add_string(object, "cmdline", alert->cmdline, sizeof alert->cmdline) ||
         !add_string(object, "launcher_exe", alert->launcher_exe, sizeof alert->launcher_exe) ||
+        !add_string(object, "launcher_md5", alert->launcher_md5, sizeof alert->launcher_md5) ||
+        !add_string(object, "launcher_sha256", alert->launcher_sha256,
+                    sizeof alert->launcher_sha256) ||
         !add_string(object, "parent_comm", alert->parent_comm, sizeof alert->parent_comm) ||
         !add_string(object, "parent_exe", alert->parent_exe, sizeof alert->parent_exe) ||
+        !add_string(object, "parent_md5", alert->parent_md5, sizeof alert->parent_md5) ||
         !add_string(object, "parent_sha256", alert->parent_sha256,
                     sizeof alert->parent_sha256) ||
         !add_string(object, "grandparent_comm", alert->grandparent_comm,
@@ -131,6 +180,9 @@ ms_alert_to_json(const struct ms_alert *alert)
                     sizeof alert->container_runtime) ||
         !add_string(object, "tty", alert->tty, sizeof alert->tty) ||
         !add_string(object, "target_exe", alert->target_exe, sizeof alert->target_exe) ||
+        !add_string(object, "target_md5", alert->target_md5, sizeof alert->target_md5) ||
+        !add_string(object, "target_sha256", alert->target_sha256,
+                    sizeof alert->target_sha256) ||
         !add_string(object, "evidence", alert->evidence, sizeof alert->evidence)) {
         json_object_put(object);
         return NULL;
@@ -181,6 +233,23 @@ copy_optional_string(json_object *parent, const char *name, char *destination,
         return true;
     }
     return copy_string(parent, name, destination, capacity, error);
+}
+
+static bool
+copy_optional_hash_status(json_object *parent, const char *name,
+                          enum ms_hash_status *status, struct ms_error *error)
+{
+    json_object *value;
+    if (!json_object_object_get_ex(parent, name, &value)) {
+        *status = MS_HASH_NOT_COLLECTED;
+        return true;
+    }
+    if (json_object_get_type(value) != json_type_string ||
+        !parse_hash_status(json_object_get_string(value), status)) {
+        set_error(error, "invalid_alert", "field '%s' is invalid", name);
+        return false;
+    }
+    return true;
 }
 
 static bool
@@ -272,17 +341,33 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
     if (!copy_string(json, "comm", parsed.comm, sizeof parsed.comm, error) ||
         !copy_string(json, "username", parsed.username, sizeof parsed.username, error) ||
         !copy_string(json, "exe", parsed.exe, sizeof parsed.exe, error) ||
+        !copy_optional_string(json, "exe_md5", parsed.exe_md5, sizeof parsed.exe_md5, error) ||
+        !copy_optional_string(json, "exe_sha256", parsed.exe_sha256,
+                              sizeof parsed.exe_sha256, error) ||
+        !copy_optional_hash_status(json, "exe_hash_status", &parsed.exe_hash_status, error) ||
         !copy_string(json, "cmdline", parsed.cmdline, sizeof parsed.cmdline, error) ||
         !copy_string(json, "launcher_exe", parsed.launcher_exe, sizeof parsed.launcher_exe, error) ||
+        !copy_optional_string(json, "launcher_md5", parsed.launcher_md5,
+                              sizeof parsed.launcher_md5, error) ||
+        !copy_optional_string(json, "launcher_sha256", parsed.launcher_sha256,
+                              sizeof parsed.launcher_sha256, error) ||
+        !copy_optional_hash_status(json, "launcher_hash_status",
+                                   &parsed.launcher_hash_status, error) ||
         !copy_optional_string(json, "parent_comm", parsed.parent_comm,
                               sizeof parsed.parent_comm, error) ||
         !copy_string(json, "parent_exe", parsed.parent_exe, sizeof parsed.parent_exe, error) ||
+        !copy_optional_string(json, "parent_md5", parsed.parent_md5,
+                              sizeof parsed.parent_md5, error) ||
         !copy_optional_string(json, "parent_sha256", parsed.parent_sha256,
                               sizeof parsed.parent_sha256, error) ||
+        !copy_optional_hash_status(json, "parent_hash_status",
+                                   &parsed.parent_hash_status, error) ||
         !get_nonnegative_int(json, "target_pid", INT_MAX, &number, error))
         return false;
-    if (!valid_sha256(parsed.parent_sha256)) {
-        set_error(error, "invalid_alert", "field 'parent_sha256' is invalid");
+    if (!valid_md5(parsed.exe_md5) || !valid_sha256(parsed.exe_sha256) ||
+        !valid_md5(parsed.launcher_md5) || !valid_sha256(parsed.launcher_sha256) ||
+        !valid_md5(parsed.parent_md5) || !valid_sha256(parsed.parent_sha256)) {
+        set_error(error, "invalid_alert", "an executable hash is invalid");
         return false;
     }
     parsed.target_pid = (pid_t)number;
@@ -312,6 +397,12 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
     parsed.target_namespace_pid = (pid_t)number;
     if (!get_uint64(json, "bytes_written", &parsed.bytes_written, error) ||
         !copy_string(json, "target_exe", parsed.target_exe, sizeof parsed.target_exe, error) ||
+        !copy_optional_string(json, "target_md5", parsed.target_md5,
+                              sizeof parsed.target_md5, error) ||
+        !copy_optional_string(json, "target_sha256", parsed.target_sha256,
+                              sizeof parsed.target_sha256, error) ||
+        !copy_optional_hash_status(json, "target_hash_status",
+                                   &parsed.target_hash_status, error) ||
         !copy_string(json, "evidence", parsed.evidence, sizeof parsed.evidence, error) ||
         !get_required(json, "enrichment_incomplete", json_type_boolean, &value, error))
         return false;
@@ -319,6 +410,10 @@ ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *e
     if (!get_required(json, "arguments_truncated", json_type_boolean, &value, error))
         return false;
     parsed.arguments_truncated = json_object_get_boolean(value);
+    if (!valid_md5(parsed.target_md5) || !valid_sha256(parsed.target_sha256)) {
+        set_error(error, "invalid_alert", "a target executable hash is invalid");
+        return false;
+    }
 
     *alert = parsed;
     if (error != NULL)

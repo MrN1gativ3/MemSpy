@@ -74,7 +74,7 @@ test_store_schema_permissions_and_wal(struct store_fixture *fixture, gconstpoint
     g_assert_cmpint(sqlite3_open_v2(fixture->path, &database, SQLITE_OPEN_READONLY, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_prepare_v2(database, "PRAGMA user_version", -1, &statement, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_step(statement), ==, SQLITE_ROW);
-    g_assert_cmpint(sqlite3_column_int(statement, 0), ==, 4);
+    g_assert_cmpint(sqlite3_column_int(statement, 0), ==, 5);
     sqlite3_finalize(statement);
     g_assert_cmpint(sqlite3_prepare_v2(database, "PRAGMA journal_mode", -1, &statement, NULL), ==, SQLITE_OK);
     g_assert_cmpint(sqlite3_step(statement), ==, SQLITE_ROW);
@@ -100,6 +100,11 @@ test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixtur
     g_strlcpy(second.launcher_exe, "/usr/bin/launcher", sizeof second.launcher_exe);
     g_strlcpy(second.parent_exe, "/usr/bin/parent", sizeof second.parent_exe);
     g_strlcpy(second.parent_comm, "parent", sizeof second.parent_comm);
+    g_strlcpy(second.exe_md5, "0123456789abcdef0123456789abcdef", sizeof second.exe_md5);
+    second.exe_hash_status = MS_HASH_COMPLETE;
+    g_strlcpy(second.parent_md5, "1123456789abcdef0123456789abcdef",
+              sizeof second.parent_md5);
+    second.parent_hash_status = MS_HASH_COMPLETE;
     g_strlcpy(second.parent_sha256,
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
               sizeof second.parent_sha256);
@@ -132,6 +137,10 @@ test_store_inserts_and_paginates_without_duplicates(struct store_fixture *fixtur
     g_assert_cmpstr(page.items[1].parent_comm, ==, "parent");
     g_assert_cmpstr(page.items[1].parent_sha256, ==,
                     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    g_assert_cmpstr(page.items[1].exe_md5, ==, "0123456789abcdef0123456789abcdef");
+    g_assert_cmpint(page.items[1].exe_hash_status, ==, MS_HASH_COMPLETE);
+    g_assert_cmpstr(page.items[1].parent_md5, ==, "1123456789abcdef0123456789abcdef");
+    g_assert_cmpint(page.items[1].parent_hash_status, ==, MS_HASH_COMPLETE);
     g_assert_true(page.items[1].arguments_truncated);
     g_assert_cmpint(page.items[1].grandparent_pid, ==, 9);
     g_assert_cmpstr(page.items[1].systemd_unit, ==, "fixture.service");
@@ -205,6 +214,7 @@ test_store_migrates_version_one(void)
     g_assert_cmpstr(page.items[0].parent_exe, ==, "");
     g_assert_cmpstr(page.items[0].parent_comm, ==, "");
     g_assert_cmpstr(page.items[0].parent_sha256, ==, "");
+    g_assert_cmpint(page.items[0].exe_hash_status, ==, MS_HASH_NOT_COLLECTED);
     g_assert_false(page.items[0].arguments_truncated);
     ms_alert_page_clear(&page);
     ms_store_close(store);

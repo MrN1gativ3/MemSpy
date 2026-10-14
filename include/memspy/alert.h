@@ -14,6 +14,7 @@
 #define MS_COMM_BYTES 64U
 #define MS_USERNAME_BYTES 256U
 #define MS_PATH_BYTES 4096U
+#define MS_MD5_BYTES 33U
 #define MS_SHA256_BYTES 65U
 #define MS_EVIDENCE_BYTES 1024U
 #define MS_UNIT_BYTES 256U
@@ -32,6 +33,18 @@ enum ms_alert_action {
     MS_ALERT_BLOCKED = 1,
 };
 
+enum ms_hash_status {
+    MS_HASH_NOT_COLLECTED = 0,
+    MS_HASH_COMPLETE,
+    MS_HASH_PROCESS_EXITED,
+    MS_HASH_IMAGE_UNAVAILABLE,
+    MS_HASH_NO_FILESYSTEM_PATH,
+    MS_HASH_TOO_LARGE,
+    MS_HASH_READ_ERROR,
+    MS_HASH_IDENTITY_CHANGED,
+    MS_HASH_BLOCKED_BEFORE_OPEN,
+};
+
 struct ms_alert {
     int64_t id;
     int64_t timestamp_utc;
@@ -46,11 +59,19 @@ struct ms_alert {
     char comm[MS_COMM_BYTES];
     char username[MS_USERNAME_BYTES];
     char exe[MS_PATH_BYTES];
+    char exe_md5[MS_MD5_BYTES];
+    char exe_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status exe_hash_status;
     char cmdline[MS_MAX_CMDLINE_BYTES + 1U];
     char launcher_exe[MS_PATH_BYTES];
+    char launcher_md5[MS_MD5_BYTES];
+    char launcher_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status launcher_hash_status;
     char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
+    char parent_md5[MS_MD5_BYTES];
     char parent_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status parent_hash_status;
     pid_t grandparent_pid;
     char grandparent_comm[MS_COMM_BYTES];
     char grandparent_exe[MS_PATH_BYTES];
@@ -65,11 +86,16 @@ struct ms_alert {
     pid_t target_pid;
     pid_t target_namespace_pid;
     char target_exe[MS_PATH_BYTES];
+    char target_md5[MS_MD5_BYTES];
+    char target_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status target_hash_status;
     uint64_t bytes_written;
     char evidence[MS_EVIDENCE_BYTES];
     bool enrichment_incomplete;
     bool arguments_truncated;
 };
+
+const char *ms_hash_status_name(enum ms_hash_status status);
 
 json_object *ms_alert_to_json(const struct ms_alert *alert);
 bool ms_alert_from_json(json_object *json, struct ms_alert *alert, struct ms_error *error);

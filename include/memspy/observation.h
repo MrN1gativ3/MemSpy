@@ -37,10 +37,15 @@ struct ms_observation {
     char comm[MS_COMM_BYTES];
     char username[MS_USERNAME_BYTES];
     char exe[MS_PATH_BYTES];
+    char exe_md5[MS_MD5_BYTES];
+    char exe_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status exe_hash_status;
     char cmdline[MS_MAX_CMDLINE_BYTES + 1U];
     char parent_comm[MS_COMM_BYTES];
     char parent_exe[MS_PATH_BYTES];
+    char parent_md5[MS_MD5_BYTES];
     char parent_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status parent_hash_status;
     pid_t grandparent_pid;
     char grandparent_comm[MS_COMM_BYTES];
     char grandparent_exe[MS_PATH_BYTES];
@@ -54,6 +59,9 @@ struct ms_observation {
     uint64_t mount_namespace;
     pid_t target_namespace_pid;
     char target_exe[MS_PATH_BYTES];
+    char target_md5[MS_MD5_BYTES];
+    char target_sha256[MS_SHA256_BYTES];
+    enum ms_hash_status target_hash_status;
     uint64_t bytes_written;
     bool enrichment_incomplete;
     bool arguments_truncated;

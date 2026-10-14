@@ -20,6 +20,11 @@ observation(enum ms_observation_kind kind, pid_t pid, uint64_t start_ns, uint64_
     g_strlcpy(value.exe, "/usr/bin/fixture", sizeof value.exe);
     g_strlcpy(value.cmdline, "fixture --test", sizeof value.cmdline);
     g_strlcpy(value.parent_comm, "shell", sizeof value.parent_comm);
+    g_strlcpy(value.exe_md5, "0123456789abcdef0123456789abcdef", sizeof value.exe_md5);
+    g_strlcpy(value.parent_md5, "1123456789abcdef0123456789abcdef",
+              sizeof value.parent_md5);
+    value.exe_hash_status = MS_HASH_COMPLETE;
+    value.parent_hash_status = MS_HASH_COMPLETE;
     g_strlcpy(value.parent_exe, "/usr/bin/shell", sizeof value.parent_exe);
     g_strlcpy(value.parent_sha256,
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
@@ -49,6 +54,9 @@ assert_rule(struct ms_observation value, const char *rule_id, enum ms_severity s
     g_assert_cmpstr(alert.parent_exe, ==, "/usr/bin/shell");
     g_assert_cmpstr(alert.parent_sha256, ==,
                     "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef");
+    g_assert_cmpstr(alert.exe_md5, ==, "0123456789abcdef0123456789abcdef");
+    g_assert_cmpstr(alert.parent_md5, ==, "1123456789abcdef0123456789abcdef");
+    g_assert_cmpint(alert.exe_hash_status, ==, MS_HASH_COMPLETE);
     g_assert_cmpint(alert.grandparent_pid, ==, 2);
     g_assert_cmpstr(alert.grandparent_comm, ==, "sshd");
     g_assert_cmpstr(alert.systemd_unit, ==, "fixture.service");

@@ -28,6 +28,8 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
         .severity = severity,
         .pid = 4321,
         .uid = 1000,
+        .exe_hash_status = MS_HASH_NO_FILESYSTEM_PATH,
+        .parent_hash_status = MS_HASH_COMPLETE,
     };
     g_strlcpy(alert.rule_id, severity == MS_SEVERITY_HIGH ? "MEMFD_EXEC" : "DELETED_EXEC",
               sizeof alert.rule_id);
@@ -38,6 +40,8 @@ fixture_alert(int64_t id, enum ms_severity severity, const char *cmdline)
     g_strlcpy(alert.cmdline, cmdline, sizeof alert.cmdline);
     g_strlcpy(alert.parent_exe, "/usr/bin/terminal", sizeof alert.parent_exe);
     g_strlcpy(alert.parent_comm, "terminal", sizeof alert.parent_comm);
+    g_strlcpy(alert.parent_md5, "0123456789abcdef0123456789abcdef",
+              sizeof alert.parent_md5);
     g_strlcpy(alert.parent_sha256,
               "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
               sizeof alert.parent_sha256);
@@ -285,7 +289,7 @@ test_response_switch_states_and_accessibility(void)
     health.response_requested = true;
     health.response_active = true;
     ms_window_set_health(window, &health);
-    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(has_label_text(widget, "On — Blocking fileless execution and injection"));
     g_assert_true(gtk_switch_get_active(GTK_SWITCH(control)));
     g_assert_cmpuint(calls.count, ==, 0);
     states = atk_object_ref_state_set(accessible);
@@ -297,10 +301,10 @@ test_response_switch_states_and_accessibility(void)
     g_assert_false(gtk_widget_get_sensitive(control));
 
     ms_window_set_response_pending(window, false);
-    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(has_label_text(widget, "On — Blocking fileless execution and injection"));
     g_assert_true(gtk_widget_get_sensitive(control));
     ms_window_set_response_error(window, "Administrator authentication was cancelled");
-    g_assert_true(has_label_text(widget, "On — Blocking memfd execution"));
+    g_assert_true(has_label_text(widget, "On — Blocking fileless execution and injection"));
     g_assert_true(has_label_text(widget, "Administrator authentication was cancelled"));
     g_assert_true(gtk_switch_get_active(GTK_SWITCH(control)));
 
@@ -368,6 +372,13 @@ test_alert_outcomes_and_grouped_process_details(void)
     blocked.mount_namespace = 202;
     blocked.arguments_truncated = true;
     g_strlcpy(blocked.launcher_exe, "/usr/bin/loader", sizeof blocked.launcher_exe);
+    g_strlcpy(blocked.launcher_md5, "1123456789abcdef0123456789abcdef",
+              sizeof blocked.launcher_md5);
+    g_strlcpy(blocked.launcher_sha256,
+              "1123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof blocked.launcher_sha256);
+    blocked.launcher_hash_status = MS_HASH_COMPLETE;
+    blocked.exe_hash_status = MS_HASH_BLOCKED_BEFORE_OPEN;
     g_strlcpy(blocked.target_exe, "/memfd:payload", sizeof blocked.target_exe);
     g_strlcpy(blocked.grandparent_comm, "sshd", sizeof blocked.grandparent_comm);
     g_strlcpy(blocked.grandparent_exe, "/usr/sbin/sshd", sizeof blocked.grandparent_exe);
@@ -407,7 +418,13 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Parent process name"));
     g_assert_true(has_label_text(widget, "Parent PID"));
     g_assert_true(has_label_text(widget, "Parent executable"));
-    g_assert_true(has_label_text(widget, "Parent SHA-256"));
+    g_assert_true(has_label_text(widget, "Payload / executed image"));
+    g_assert_true(has_label_text(widget, "Parent process"));
+    g_assert_true(has_label_text(widget, "Path"));
+    g_assert_true(has_label_text(widget, "MD5"));
+    g_assert_true(has_label_text(widget, "SHA-256"));
+    g_assert_true(has_label_text(widget, "No filesystem path is available"));
+    g_assert_true(has_label_text(widget, "Blocked before executable image opened"));
     g_assert_true(has_label_text(widget, "Grandparent process name"));
     g_assert_true(has_label_text(widget, "SSH origin"));
     g_assert_true(has_label_text(widget, "Systemd unit"));
@@ -419,15 +436,15 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_true(has_label_text(widget, "Command line"));
     g_assert_true(has_label_text(widget, "Launcher executable"));
     g_assert_true(has_label_text(widget, "Target PID"));
-    g_assert_true(has_label_text(widget, "Target executable"));
+    g_assert_false(has_label_text(widget, "Actor executable"));
     g_assert_true(has_label_text(widget, "Target namespace PID"));
     g_assert_true(has_label_text(widget, "Bytes written"));
     g_assert_true(has_label_text(widget, "Outcome"));
     g_assert_true(has_label_text(widget, "Alert ID"));
     g_assert_true(has_label_text(widget, "Rule"));
     g_assert_true(has_label_text(widget, "Detection signal"));
-    g_assert_true(has_label_text(widget, "Evidence completeness"));
-    g_assert_true(has_label_text(widget, "Complete"));
+    g_assert_false(has_label_text(widget, "Evidence completeness"));
+    g_assert_true(has_label_text(widget, "Hash complete"));
     g_assert_true(has_label_text(widget, "Arguments truncated"));
     g_assert_cmpuint(label_text_count(widget, "Target PID"), ==, 1);
     g_assert_cmpuint(label_text_count(widget, "Launcher executable"), ==, 1);
@@ -435,6 +452,40 @@ test_alert_outcomes_and_grouped_process_details(void)
     g_assert_cmpuint(style_class_count(widget, "memspy-outcome-blocked"), ==, 2);
     g_assert_cmpuint(style_class_count(widget, "memspy-outcome-detected"), ==, 2);
 
+    ms_window_free(window);
+}
+
+static void
+test_injection_alert_shows_actor_and_target_evidence(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert alert = fixture_alert(11, MS_SEVERITY_MEDIUM, "injector --target 91");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *hash;
+
+    g_strlcpy(alert.rule_id, "PTRACE_WRITE", sizeof alert.rule_id);
+    g_strlcpy(alert.exe, "/usr/bin/injector", sizeof alert.exe);
+    g_strlcpy(alert.exe_md5, "2123456789abcdef0123456789abcdef", sizeof alert.exe_md5);
+    g_strlcpy(alert.exe_sha256,
+              "2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof alert.exe_sha256);
+    alert.exe_hash_status = MS_HASH_COMPLETE;
+    alert.target_pid = 91;
+    g_strlcpy(alert.target_exe, "/usr/bin/target", sizeof alert.target_exe);
+    g_strlcpy(alert.target_md5, "3123456789abcdef0123456789abcdef",
+              sizeof alert.target_md5);
+    g_strlcpy(alert.target_sha256,
+              "3123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+              sizeof alert.target_sha256);
+    alert.target_hash_status = MS_HASH_COMPLETE;
+
+    g_assert_true(ms_window_add_alert(window, &alert));
+    g_assert_true(has_label_text(widget, "Actor executable"));
+    g_assert_true(has_label_text(widget, "Target executable"));
+    g_assert_false(has_label_text(widget, "Payload / executed image"));
+    hash = find_label_widget(widget, alert.target_sha256);
+    g_assert_nonnull(hash);
+    g_assert_true(gtk_label_get_selectable(GTK_LABEL(hash)));
     ms_window_free(window);
 }
 
@@ -453,13 +504,15 @@ test_alert_missing_and_long_fields(void)
     alert.parent_comm[0] = '\0';
     alert.parent_exe[0] = '\0';
     alert.parent_sha256[0] = '\0';
+    alert.parent_md5[0] = '\0';
+    alert.parent_hash_status = MS_HASH_IDENTITY_CHANGED;
     alert.ppid = 0;
     alert.enrichment_incomplete = true;
     g_assert_true(ms_window_add_alert(window, &alert));
-    g_assert_cmpuint(label_text_count(widget, "Unavailable"), ==, 3);
+    g_assert_cmpuint(label_text_count(widget, "Unavailable"), >=, 5);
     g_assert_true(has_label_text(widget, "Unavailable · PID 4321"));
     g_assert_false(has_label_text(widget, "Parent process name"));
-    g_assert_true(has_label_text(widget, "Some process details were unavailable"));
+    g_assert_true(has_label_text(widget, "Process identity changed before hashing"));
     command = find_label_widget(widget, alert.cmdline);
     g_assert_nonnull(command);
     g_assert_true(gtk_label_get_selectable(GTK_LABEL(command)));
@@ -555,5 +608,7 @@ main(int argc, char **argv)
                     test_alert_outcomes_and_grouped_process_details);
     g_test_add_func("/ui/alert-missing-and-long-fields",
                     test_alert_missing_and_long_fields);
+    g_test_add_func("/ui/injection-actor-target-evidence",
+                    test_injection_alert_shows_actor_and_target_evidence);
     return g_test_run();
 }

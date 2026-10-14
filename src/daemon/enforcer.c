@@ -253,6 +253,7 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
         used += length;
     }
     struct ms_process_evidence evidence = {0};
+    struct ms_executable_evidence image = {0};
     complete = read_username(alert->uid, alert->username, sizeof alert->username) &&
                read_link(alert->pid, alert->launcher_exe, sizeof alert->launcher_exe) &&
                ms_process_evidence_read(alert->pid, &evidence);
@@ -260,7 +261,13 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
         alert->ppid = evidence.parent_pid;
     g_strlcpy(alert->parent_comm, evidence.parent_comm, sizeof alert->parent_comm);
     g_strlcpy(alert->parent_exe, evidence.parent_exe, sizeof alert->parent_exe);
-    g_strlcpy(alert->parent_sha256, evidence.parent_sha256, sizeof alert->parent_sha256);
+    if (evidence.parent_pid > 0)
+        ms_executable_evidence_read(evidence.parent_pid, 0, &image);
+    if (image.path[0] != '\0')
+        g_strlcpy(alert->parent_exe, image.path, sizeof alert->parent_exe);
+    g_strlcpy(alert->parent_md5, image.md5, sizeof alert->parent_md5);
+    g_strlcpy(alert->parent_sha256, image.sha256, sizeof alert->parent_sha256);
+    alert->parent_hash_status = image.status;
     alert->grandparent_pid = evidence.grandparent_pid;
     g_strlcpy(alert->grandparent_comm, evidence.grandparent_comm, sizeof alert->grandparent_comm);
     g_strlcpy(alert->grandparent_exe, evidence.grandparent_exe, sizeof alert->grandparent_exe);
@@ -272,6 +279,32 @@ ms_enforcer_alert_from_event(const struct ms_enforce_event *event,
     alert->ssh_origin = evidence.ssh_origin;
     alert->pid_namespace = evidence.pid_namespace;
     alert->mount_namespace = evidence.mount_namespace;
+    image = (struct ms_executable_evidence){0};
+    ms_executable_evidence_read(alert->pid, 0, &image);
+    if (event->kind == MS_ENFORCE_BLOCKED_MEMFD_EXEC ||
+        event->kind == MS_ENFORCE_BLOCKED_DELETED_EXEC) {
+        if (image.path[0] != '\0')
+            g_strlcpy(alert->launcher_exe, image.path, sizeof alert->launcher_exe);
+        g_strlcpy(alert->launcher_md5, image.md5, sizeof alert->launcher_md5);
+        g_strlcpy(alert->launcher_sha256, image.sha256, sizeof alert->launcher_sha256);
+        alert->launcher_hash_status = image.status;
+        alert->exe_hash_status = MS_HASH_BLOCKED_BEFORE_OPEN;
+    } else {
+        if (image.path[0] != '\0')
+            g_strlcpy(alert->exe, image.path, sizeof alert->exe);
+        g_strlcpy(alert->exe_md5, image.md5, sizeof alert->exe_md5);
+        g_strlcpy(alert->exe_sha256, image.sha256, sizeof alert->exe_sha256);
+        alert->exe_hash_status = image.status;
+        if (alert->target_pid > 0) {
+            image = (struct ms_executable_evidence){0};
+            ms_executable_evidence_read(alert->target_pid, 0, &image);
+            if (image.path[0] != '\0')
+                g_strlcpy(alert->target_exe, image.path, sizeof alert->target_exe);
+            g_strlcpy(alert->target_md5, image.md5, sizeof alert->target_md5);
+            g_strlcpy(alert->target_sha256, image.sha256, sizeof alert->target_sha256);
+            alert->target_hash_status = image.status;
+        }
+    }
     alert->enrichment_incomplete |= !complete;
     clock_gettime(CLOCK_REALTIME, &now);
     alert->timestamp_utc = now.tv_sec;

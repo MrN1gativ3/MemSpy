@@ -6,4 +6,4 @@ The service requires x86_64 Linux 5.4+ and readable BTF at `/sys/kernel/btf/vmli
 
 If the SQLite database cannot open, the service preserves it, continues bounded live detection in degraded health, and retries storage every 60 seconds.
 
-Response mode blocks only memfd-backed execution and requires BPF LSM support. Other detections, including confirmed writes through `/proc/<pid>/mem`, remain observational. Process context is bounded and may be incomplete when short-lived `/proc` entries disappear.
+Response mode uses BPF LSM to deny supported memory-backed or deleted-image execution and cross-process memory modifications. Process context is bounded and may be incomplete when short-lived `/proc` entries disappear. Expanded incidents record role-specific paths plus MD5 and SHA-256 hashes when an executable image remains available and is no larger than 128 MiB.

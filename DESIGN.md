@@ -97,7 +97,7 @@ There is one window and no route hierarchy. Alerts render newest first in a boun
 
 ### Forms and overlays
 
-There are no product forms or destructive dialogs. The native PolicyKit agent owns the administrator-password prompt; MemSpy never renders or handles credentials. Response changes are pessimistic: the switch enters a disabled Pending state and commits only after daemon confirmation. Persistent connection and health failures use the status banner; transient high-severity alerts use native desktop notifications. Essential recovery information never exists only in a notification.
+There are no product forms or destructive dialogs. The native PolicyKit agent owns the administrator-password prompt; MemSpy never renders or handles credentials. Response changes are pessimistic: the switch enters a disabled Pending state and commits only after daemon confirmation. Persistent connection and health failures use the status banner; transient high-severity alerts use native desktop notifications. Essential recovery information never exists only in a notification. Expanded Evidence groups are named by process role and show selectable paths, MD5, SHA-256, and exact collection status without guessing missing data.
 
 ### Iconography
 
@@ -109,7 +109,7 @@ Use only native GTK disclosure and spinner behavior. New live alerts may appear 
 
 ### Content and data visualization
 
-Copy is direct and operational: “Monitoring active,” “Monitoring degraded,” “Detector unavailable,” “Off — Detection only,” and “On — Blocking memfd execution.” Show rule IDs and bounded process evidence faithfully, but never raw daemon errors, payload memory, environment variables, or file contents. There are no charts.
+Copy is direct and operational: “Monitoring active,” “Monitoring degraded,” “Detector unavailable,” “Off — Detection only,” and “On — Blocking fileless execution and injection.” Show rule IDs and bounded process evidence faithfully, but never raw daemon errors, payload memory, environment variables, or file contents. There are no charts.
 
 ## Do's and Don'ts
 

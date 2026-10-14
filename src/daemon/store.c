@@ -12,7 +12,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-#define MS_STORE_SCHEMA_VERSION 4
+#define MS_STORE_SCHEMA_VERSION 5
 #define MS_STORE_MAX_PAGE 200U
 #define MS_STORE_MAX_PRUNE_BATCH 100U
 
@@ -94,11 +94,19 @@ migrate(sqlite3 *database, struct ms_error *error)
         "container_id TEXT NOT NULL DEFAULT '',container_runtime TEXT NOT NULL DEFAULT '',"
         "tty TEXT NOT NULL DEFAULT '',ssh_origin INTEGER NOT NULL DEFAULT 0 CHECK(ssh_origin IN (0,1)),"
         "pid_namespace INTEGER NOT NULL DEFAULT 0,mount_namespace INTEGER NOT NULL DEFAULT 0,"
-        "target_namespace_pid INTEGER NOT NULL DEFAULT 0,bytes_written INTEGER NOT NULL DEFAULT 0"
+        "target_namespace_pid INTEGER NOT NULL DEFAULT 0,bytes_written INTEGER NOT NULL DEFAULT 0,"
+        "exe_md5 TEXT NOT NULL DEFAULT '',exe_sha256 TEXT NOT NULL DEFAULT '',"
+        "exe_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(exe_hash_status BETWEEN 0 AND 8),"
+        "launcher_md5 TEXT NOT NULL DEFAULT '',launcher_sha256 TEXT NOT NULL DEFAULT '',"
+        "launcher_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(launcher_hash_status BETWEEN 0 AND 8),"
+        "parent_md5 TEXT NOT NULL DEFAULT '',"
+        "parent_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(parent_hash_status BETWEEN 0 AND 8),"
+        "target_md5 TEXT NOT NULL DEFAULT '',target_sha256 TEXT NOT NULL DEFAULT '',"
+        "target_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(target_hash_status BETWEEN 0 AND 8)"
         ");"
         "CREATE INDEX alerts_timestamp_idx ON alerts(timestamp_utc);"
         "CREATE INDEX alerts_severity_id_idx ON alerts(severity,id);"
-        "PRAGMA user_version=4;"
+        "PRAGMA user_version=5;"
         "COMMIT;";
     static const char migrate_v1[] =
         "BEGIN IMMEDIATE;"
@@ -134,12 +142,34 @@ migrate(sqlite3 *database, struct ms_error *error)
         "ALTER TABLE alerts ADD COLUMN bytes_written INTEGER NOT NULL DEFAULT 0;"
         "PRAGMA user_version=4;"
         "COMMIT;";
+    static const char migrate_v4[] =
+        "BEGIN IMMEDIATE;"
+        "ALTER TABLE alerts ADD COLUMN exe_md5 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN exe_sha256 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN exe_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(exe_hash_status BETWEEN 0 AND 8);"
+        "ALTER TABLE alerts ADD COLUMN launcher_md5 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN launcher_sha256 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN launcher_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(launcher_hash_status BETWEEN 0 AND 8);"
+        "ALTER TABLE alerts ADD COLUMN parent_md5 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN parent_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(parent_hash_status BETWEEN 0 AND 8);"
+        "ALTER TABLE alerts ADD COLUMN target_md5 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN target_sha256 TEXT NOT NULL DEFAULT '';"
+        "ALTER TABLE alerts ADD COLUMN target_hash_status INTEGER NOT NULL DEFAULT 0 CHECK(target_hash_status BETWEEN 0 AND 8);"
+        "PRAGMA user_version=5;"
+        "COMMIT;";
     int version;
 
     if (!read_user_version(database, &version, error))
         return false;
     if (version == MS_STORE_SCHEMA_VERSION)
         return true;
+    if (version == 4) {
+        if (!execute(database, migrate_v4, error)) {
+            sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
+            return false;
+        }
+        return true;
+    }
     if (version == 1) {
         if (!execute(database, migrate_v1, error)) {
             sqlite3_exec(database, "ROLLBACK", NULL, NULL, NULL);
@@ -270,15 +300,26 @@ bind_alert(sqlite3_stmt *statement, const struct ms_alert *alert)
            sqlite3_bind_int64(statement, index++, (sqlite3_int64)alert->pid_namespace) == SQLITE_OK &&
            sqlite3_bind_int64(statement, index++, (sqlite3_int64)alert->mount_namespace) == SQLITE_OK &&
            sqlite3_bind_int(statement, index++, alert->target_namespace_pid) == SQLITE_OK &&
-           sqlite3_bind_int64(statement, index, (sqlite3_int64)alert->bytes_written) == SQLITE_OK;
+           sqlite3_bind_int64(statement, index++, (sqlite3_int64)alert->bytes_written) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->exe_md5, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->exe_sha256, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index++, alert->exe_hash_status) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->launcher_md5, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->launcher_sha256, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index++, alert->launcher_hash_status) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->parent_md5, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index++, alert->parent_hash_status) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->target_md5, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_text(statement, index++, alert->target_sha256, -1, SQLITE_TRANSIENT) == SQLITE_OK &&
+           sqlite3_bind_int(statement, index, alert->target_hash_status) == SQLITE_OK;
 }
 
 bool
 ms_store_insert(struct ms_store *store, struct ms_alert *alert, struct ms_error *error)
 {
     static const char sql[] =
-        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written)"
-        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
+        "INSERT INTO alerts(timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written,exe_md5,exe_sha256,exe_hash_status,launcher_md5,launcher_sha256,launcher_hash_status,parent_md5,parent_hash_status,target_md5,target_sha256,target_hash_status)"
+        " VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)";
     sqlite3_stmt *statement = NULL;
     int result;
 
@@ -340,6 +381,10 @@ read_alert(sqlite3_stmt *statement, struct ms_alert *alert, struct ms_error *err
         .mount_namespace = (uint64_t)sqlite3_column_int64(statement, 33),
         .target_namespace_pid = sqlite3_column_int(statement, 34),
         .bytes_written = (uint64_t)sqlite3_column_int64(statement, 35),
+        .exe_hash_status = (enum ms_hash_status)sqlite3_column_int(statement, 38),
+        .launcher_hash_status = (enum ms_hash_status)sqlite3_column_int(statement, 41),
+        .parent_hash_status = (enum ms_hash_status)sqlite3_column_int(statement, 43),
+        .target_hash_status = (enum ms_hash_status)sqlite3_column_int(statement, 46),
     };
     if (alert->action != MS_ALERT_DETECTED && alert->action != MS_ALERT_BLOCKED) {
         set_error(error, "store_data", "stored alert contains an invalid action");
@@ -363,7 +408,16 @@ read_alert(sqlite3_stmt *statement, struct ms_alert *alert, struct ms_error *err
            copy_column(statement, 27, alert->cgroup_path, sizeof alert->cgroup_path, error) &&
            copy_column(statement, 28, alert->container_id, sizeof alert->container_id, error) &&
            copy_column(statement, 29, alert->container_runtime, sizeof alert->container_runtime, error) &&
-           copy_column(statement, 30, alert->tty, sizeof alert->tty, error);
+           copy_column(statement, 30, alert->tty, sizeof alert->tty, error) &&
+           copy_column(statement, 36, alert->exe_md5, sizeof alert->exe_md5, error) &&
+           copy_column(statement, 37, alert->exe_sha256, sizeof alert->exe_sha256, error) &&
+           copy_column(statement, 39, alert->launcher_md5, sizeof alert->launcher_md5, error) &&
+           copy_column(statement, 40, alert->launcher_sha256,
+                       sizeof alert->launcher_sha256, error) &&
+           copy_column(statement, 42, alert->parent_md5, sizeof alert->parent_md5, error) &&
+           copy_column(statement, 44, alert->target_md5, sizeof alert->target_md5, error) &&
+           copy_column(statement, 45, alert->target_sha256,
+                       sizeof alert->target_sha256, error);
 }
 
 bool
@@ -371,7 +425,7 @@ ms_store_get(struct ms_store *store, int64_t id, struct ms_alert *alert,
              struct ms_error *error)
 {
     static const char sql[] =
-        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written FROM alerts WHERE id=?";
+        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written,exe_md5,exe_sha256,exe_hash_status,launcher_md5,launcher_sha256,launcher_hash_status,parent_md5,parent_hash_status,target_md5,target_sha256,target_hash_status FROM alerts WHERE id=?";
     sqlite3_stmt *statement = NULL;
     struct ms_alert result = {0};
     int step;
@@ -414,7 +468,7 @@ ms_store_list(struct ms_store *store, int64_t before_id, enum ms_severity minimu
               size_t limit, struct ms_alert_page *page, struct ms_error *error)
 {
     static const char sql[] =
-        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written "
+        "SELECT id,timestamp_utc,observed_boottime_ns,severity,rule_id,explanation,pid,ppid,uid,comm,exe,cmdline,target_pid,target_exe,evidence,enrichment_incomplete,action,username,launcher_exe,parent_exe,arguments_truncated,parent_comm,parent_sha256,grandparent_pid,grandparent_comm,grandparent_exe,systemd_unit,cgroup_path,container_id,container_runtime,tty,ssh_origin,pid_namespace,mount_namespace,target_namespace_pid,bytes_written,exe_md5,exe_sha256,exe_hash_status,launcher_md5,launcher_sha256,launcher_hash_status,parent_md5,parent_hash_status,target_md5,target_sha256,target_hash_status "
         "FROM alerts WHERE (?=0 OR id<?) AND severity>=? ORDER BY id DESC LIMIT ?";
     sqlite3_stmt *statement = NULL;
     struct ms_alert_page result = {0};

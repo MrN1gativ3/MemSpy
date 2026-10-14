@@ -92,6 +92,14 @@
   font-size: 0.95rem;
 }
 
+.memspy-evidence-role {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid #3D4250;
+  color: #D9DCE3;
+  font-weight: bold;
+}
+
 .memspy-details-toggle {
   margin-top: 2px;
   padding: 6px 10px;
