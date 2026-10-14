@@ -27,6 +27,10 @@ struct pending_call {
     __u64 aux;
 };
 
+/* A syscall's entry gives us the target and operation; its exit gives us the result.
+ * Keep the entry data under the calling thread ID, then emit only after a
+ * successful exit. The LRU bound prevents abandoned entries from growing
+ * without limit if an exit is missed. */
 struct {
     __uint(type, BPF_MAP_TYPE_LRU_HASH);
     __uint(max_entries, 4096);
@@ -130,6 +134,9 @@ int exit_ptrace(struct syscall_exit *context)
 
 static __always_inline __u32 proc_mem_target(__u32 fd, __u32 *namespace_pid)
 {
+    /* A path supplied by the caller is not trustworthy evidence of a write
+     * through /proc/<pid>/mem. Walk the open descriptor to verify that it is
+     * the procfs "mem" inode and discover which process it refers to. */
     struct task_struct *task = (struct task_struct *)bpf_get_current_task();
     struct files_struct *files;
     struct fdtable *table;
@@ -183,6 +190,9 @@ static __always_inline __u32 proc_mem_target(__u32 fd, __u32 *namespace_pid)
     *namespace_pid = ms_parse_proc_pid(process);
     if (*namespace_pid == 0)
         return 0;
+    /* The directory name is the PID visible in this procfs mount. Follow the
+     * proc inode to its task as well, so userspace can correlate the event
+     * using the host PID even when namespaces give it a different number. */
     proc_inode = (struct proc_inode *)((char *)inode -
                  bpf_core_field_offset(struct proc_inode, vfs_inode));
     if (MS_CORE_READ(&pid, proc_inode, pid) != 0 || pid == NULL ||

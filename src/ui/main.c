@@ -145,11 +145,17 @@ apply_health(gpointer userdata)
 static gboolean
 apply_snapshot(gpointer userdata)
 {
+    /* History and health arrive from the socket worker, which must not touch
+     * GTK widgets. Apply this snapshot on the main loop, then let the live
+     * subscription deliver newer events through the same handoff pattern. */
     struct snapshot *snapshot = userdata;
     struct ui_app *ui = snapshot->ui;
     if (!g_atomic_int_get(&ui->stopping)) {
         ms_ui_state_apply_health(&ui->state, &snapshot->health);
         ms_window_set_health(ui->window, &snapshot->health);
+        /* The API pages history newest first. Apply it oldest first so the
+         * last-seen ID advances in order and reconnects do not count old
+         * alerts as new notifications. */
         for (guint index = snapshot->alerts->len; index > 0; --index) {
             struct ms_alert *alert = &g_array_index(snapshot->alerts, struct ms_alert, index - 1U);
             if (ms_window_add_alert(ui->window, alert) &&
@@ -203,6 +209,9 @@ response_error_message(const struct ms_error *error)
 static gboolean
 apply_response_result(gpointer userdata)
 {
+    /* The switch is confirmed only from the daemon's returned health.
+     * Authentication and the socket request run in a worker so the GTK
+     * window remains responsive while PolicyKit prompts the user. */
     struct response_request *request = userdata;
     struct ui_app *ui = request->ui;
     GThread *thread;

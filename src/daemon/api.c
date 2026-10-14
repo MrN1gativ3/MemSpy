@@ -89,6 +89,9 @@ session_send_json(struct ms_session *session, json_object *object)
 static bool
 session_publish_json(struct ms_session *session, json_object *object)
 {
+    /* Subscriptions are best-effort live delivery; SQLite remains the source
+     * of history. Check writability before sending so a client that stops
+     * reading cannot stall sensor processing or other subscribers. */
     struct pollfd descriptor = {.fd = session->descriptor, .events = POLLOUT};
     if (poll(&descriptor, 1, 0) != 1 || (descriptor.revents & POLLOUT) == 0)
         return false;
@@ -109,6 +112,9 @@ send_error(int descriptor, const char *code)
 static ssize_t
 read_line(int descriptor, char *buffer, int timeout_ms)
 {
+    /* Requests are newline-delimited JSON. Enforce both a size limit and a
+     * deadline before parsing, so a connected but idle client cannot hold a
+     * worker indefinitely or force an oversized allocation. */
     const gint64 deadline = timeout_ms < 0 ? 0 :
         g_get_monotonic_time() + (gint64)timeout_ms * G_TIME_SPAN_MILLISECOND;
     size_t used = 0;
@@ -222,6 +228,9 @@ handle_status(struct ms_session *session)
 static void
 handle_set_response(struct ms_session *session, json_object *request)
 {
+    /* Reading status and alerts only needs socket access. Changing response
+     * mode is different: serialize requests, authorize the actual socket
+     * peer through PolicyKit, then return the daemon's confirmed health. */
     json_object *field;
     json_object *reply;
     struct ms_error error = {0};
@@ -368,6 +377,9 @@ handle_alert(struct ms_session *session, json_object *request)
 static gpointer
 client_worker(gpointer data)
 {
+    /* Each local client first agrees on the protocol version with "hello".
+     * Subsequent newline-delimited requests are handled on this worker;
+     * subscribers remain connected for live health and alert messages. */
     struct ms_session *session = data;
     char *line = g_malloc(MS_MAX_MESSAGE_BYTES + 2U);
     bool handshaken = false;

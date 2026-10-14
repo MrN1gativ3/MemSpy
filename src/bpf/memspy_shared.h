@@ -5,6 +5,9 @@
 #include <linux/types.h>
 #endif
 
+/* This is the small wire record emitted by detection tracepoints. Richer
+ * process details are read later in userspace, where filesystem access and
+ * hashing are possible. Bump the ABI if this record's layout changes. */
 #define MS_KERNEL_EVENT_ABI 2U
 #define MS_KERNEL_COMM_BYTES 16U
 #define MS_PROC_SUPER_MAGIC 0x9fa0UL

@@ -5,6 +5,9 @@
 static void
 degrade(struct ms_health *health, const char *message)
 {
+    /* Keep "running" separate from "fully protected". Lost kernel events,
+     * storage failures and other coverage gaps downgrade health even if the
+     * process stays alive, so operators are not given a false green status. */
     if (health->state != MS_HEALTH_FAILED)
         health->state = MS_HEALTH_DEGRADED;
     health->protected = false;

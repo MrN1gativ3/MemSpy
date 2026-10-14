@@ -19,6 +19,7 @@ esac
 test "$#" -le 1 || fail "usage: sudo ./uninstall.sh"
 test "$(id -u)" -eq 0 || fail "run with sudo: sudo ./uninstall.sh"
 
+# Stop the service before removing pinned programs and their installed files.
 systemctl disable --now memspyd.service >/dev/null 2>&1 || true
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 cleanup=/opt/memspy/libexec/memspy/cleanup-bpf
@@ -37,7 +38,6 @@ rm -f -- \
     /opt/memspy/bin/memspy-ui \
     /opt/memspy/libexec/memspy/memspy.bpf.o \
     /opt/memspy/libexec/memspy/memspy_enforce.bpf.o \
-    /opt/memspy/libexec/memspy/migrate-legacy \
     /opt/memspy/libexec/memspy/cleanup-bpf \
     /opt/memspy/share/memspy/memspy-ui.css \
     /etc/systemd/system/memspyd.service \
@@ -46,7 +46,6 @@ rm -f -- \
     /usr/bin/memspy-ui \
     /usr/libexec/memspy/memspy.bpf.o \
     /usr/libexec/memspy/memspy_enforce.bpf.o \
-    /usr/libexec/memspy/migrate-legacy \
     /usr/libexec/memspy/cleanup-bpf \
     /usr/lib/systemd/system/memspyd.service \
     /usr/lib/tmpfiles.d/memspyd.conf \

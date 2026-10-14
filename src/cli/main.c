@@ -8,6 +8,7 @@
 #define MEMSPY_SOCKET_PATH "/run/memspy/memspy.sock"
 #define MEMSPY_VERSION "0.1.0"
 
+/* The CLI uses the same local socket as the UI; it does not inspect BPF state itself. */
 static void usage(FILE *stream)
 {
     fprintf(stream, "Usage: memspyctl [--json] status|alerts|show ID|export ID|response on|off|version\n");

@@ -22,6 +22,9 @@ has_bpf()
 
 with_bpf()
 {
+    # The kernel reads one ordered lsm= list at boot. Keep every existing
+    # module in its original order and append bpf only if it is absent;
+    # replacing the list could disable another security module.
     list=$1
     if has_bpf "$list"; then
         printf '%s\n' "$list"

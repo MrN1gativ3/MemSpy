@@ -20,6 +20,9 @@ enum ms_observation_flag {
 };
 
 struct ms_process_id {
+    /* The kernel can reuse a PID after a process exits. Pair it with the
+     * process start time when correlating an earlier write with a later exec,
+     * so activity from two different tasks is not joined into one incident. */
     pid_t pid;
     uint64_t start_boottime_ns;
 };

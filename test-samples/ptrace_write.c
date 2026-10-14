@@ -8,6 +8,9 @@
 int
 main(void)
 {
+    /* The child explicitly permits tracing and pauses before exiting.
+     * Its parent uses PTRACE_POKEDATA on a known test value, then checks
+     * that the write took effect. */
     int pipefd[2];
     pid_t child;
     int status;

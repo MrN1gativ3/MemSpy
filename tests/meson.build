@@ -185,10 +185,6 @@ test('installer', find_program('sh'),
             meson.project_source_root() / 'install.sh',
             meson.project_source_root() / 'packaging/ubuntu/install-test-vm.sh'])
 
-test('migration', find_program('sh'),
-     args: [meson.current_source_dir() / 'package/test_migration.sh',
-            meson.project_source_root() / 'packaging/common/migrate-legacy.sh'])
-
 test('uninstall-state', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_uninstall_state.sh',
             meson.project_source_root() / 'packaging/common/remove-state.sh'])

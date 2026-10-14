@@ -13,7 +13,6 @@ for path in \
     opt/memspy/bin/memspyctl \
     opt/memspy/libexec/memspy/memspy.bpf.o \
     opt/memspy/libexec/memspy/memspy_enforce.bpf.o \
-    opt/memspy/libexec/memspy/migrate-legacy \
     opt/memspy/libexec/memspy/cleanup-bpf \
     etc/memspy/allowlist.conf \
     etc/memspy/response-allowlist.conf \
@@ -29,6 +28,10 @@ done
 for path in usr/bin/memspyd usr/bin/memspyctl usr/libexec/memspy; do
     test ! -e "$stage/$path" || { echo "unexpected legacy payload path: $path" >&2; exit 1; }
 done
+test ! -e "$stage/opt/memspy/libexec/memspy/migrate-legacy" || {
+    echo "unexpected pre-MemSpy migration helper" >&2
+    exit 1
+}
 
 if [ "$profile" = desktop ]; then
     for path in opt/memspy/bin/memspy-ui \

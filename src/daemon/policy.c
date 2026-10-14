@@ -7,6 +7,9 @@
 #define MS_POLICY_MAX_TARGETS 4096U
 
 struct injection_record {
+    /* The policy remembers recent cross-process writes by target process.
+     * A PID can be reused after a process exits, so its start time is part
+     * of the identity used when a later suspicious exec is correlated. */
     bool occupied;
     struct ms_process_id target;
     uint64_t observed_boottime_ns;
@@ -93,6 +96,9 @@ same_process(struct ms_process_id left, struct ms_process_id right)
 static struct injection_record *
 find_injection(struct ms_policy *policy, struct ms_process_id target, uint64_t now)
 {
+    /* Correlation is deliberately time-limited. A matching target outside
+     * the window is not evidence that the new exec belongs to the earlier
+     * write, even if the process identity still matches. */
     size_t index;
 
     for (index = 0; index < MS_POLICY_MAX_TARGETS; ++index) {
@@ -170,6 +176,10 @@ enum ms_policy_result
 ms_policy_ingest(struct ms_policy *policy, const struct ms_observation *observation,
                  struct ms_alert *alert)
 {
+    /* A successful cross-process write is a medium alert on its own. If the
+     * same target later executes a memfd or deleted image, report the more
+     * specific high-severity injection chain; otherwise classify that exec
+     * by its image type. Failed or self-targeted writes are ignored. */
     bool suspicious_exec;
 
     if (policy == NULL || observation == NULL || alert == NULL)

@@ -39,6 +39,11 @@ class Preflight(NamedTuple):
 
 
 def validate_preflight(state: Preflight) -> None:
+    # These files may be live malware, not harmless test fixtures. Require a
+    # disposable VM with no active network or shared-folder route back to the
+    # host, and never grant the sample root privileges. A healthy detector
+    # makes the resulting report meaningful; response mode stays off so a
+    # blocked execution is not mistaken for an undetected one.
     if state.is_root:
         raise SafetyError("refusing to execute samples as root")
     if not state.is_vm:
@@ -60,6 +65,9 @@ def validate_preflight(state: Preflight) -> None:
 
 
 def new_alerts(alerts: list[dict[str, Any]], baseline_id: int) -> list[dict[str, Any]]:
+    # SQLite alert IDs increase across runs. Compare with the ID recorded
+    # before execution to avoid attributing old alerts to this sample.
+    # No new alert only means none was observed in this test window.
     return [alert for alert in alerts if isinstance(alert.get("id"), int) and
             alert["id"] > baseline_id]
 
@@ -138,6 +146,9 @@ def _shared_filesystems() -> list[str]:
 
 def _sandbox_command(executable: pathlib.Path, runtime: pathlib.Path,
                      unit: str) -> list[str]:
+    # Keep every sample in its own transient user service. systemd enforces
+    # resource and filesystem limits, while timeout bounds a process that
+    # otherwise keeps running; neither is a substitute for VM isolation.
     return [
         "systemd-run", "--user", "--wait", "--collect", "--quiet",
         f"--unit={unit}",

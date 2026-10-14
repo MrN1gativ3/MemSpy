@@ -45,6 +45,9 @@ add_class(GtkWidget *widget, const char *name)
 static gboolean
 filter_row(GtkListBoxRow *row, gpointer userdata)
 {
+    /* Filtering changes which incident rows are visible, not their stored
+     * widgets. This preserves an analyst's expanded details and avoids
+     * rebuilding the list while switching between severity views. */
     struct ms_window *window = userdata;
     const struct alert_view *view = g_object_get_data(G_OBJECT(row), "memspy-alert");
     if (window->filter == MS_UI_FILTER_ALL)
@@ -196,6 +199,9 @@ static void
 add_evidence_group(struct detail_section *section, const char *title, const char *path,
                    const char *md5, const char *sha256, enum ms_hash_status status)
 {
+    /* Each hash belongs to a specific image role (subject, launcher, parent
+     * or target). Keep those roles separate and show collection status so a
+     * missing digest is not mistaken for an empty or harmless file. */
     GtkWidget *heading;
 
     if ((path == NULL || path[0] == '\0') && (md5 == NULL || md5[0] == '\0') &&
@@ -488,6 +494,9 @@ create_alert_row(struct alert_view *view)
 static void
 update_response_control(struct ms_window *window)
 {
+    /* The switch reflects confirmed daemon health, not the click that began
+     * an authorization request. Pending and unavailable states disable the
+     * control; a failure leaves its visual position at the last known state. */
     char text[384];
     char accessible_name[416];
     const char *name;

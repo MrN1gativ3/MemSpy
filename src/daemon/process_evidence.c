@@ -106,6 +106,9 @@ read_start_boottime_ns(int directory, uint64_t *start_ns)
 static enum ms_hash_status
 hash_image(int descriptor, char md5[MS_MD5_BYTES], char sha256[MS_SHA256_BYTES])
 {
+    /* Hash the opened image rather than a path that could be replaced.
+     * Compare file identity and modification time before and after reading;
+     * if it changed, return a status instead of an untrustworthy digest. */
     struct stat before;
     struct stat after;
     g_autoptr(GChecksum) md5_sum = NULL;
@@ -145,6 +148,10 @@ ms_executable_evidence_read_at(const char *proc_root, pid_t pid,
                                uint64_t expected_start_boottime_ns,
                                struct ms_executable_evidence *evidence)
 {
+    /* /proc/<pid> may disappear or be reused while evidence is collected.
+     * Read the task's start time before and after opening its executable,
+     * and compare it with the sensor's expected start time when available.
+     * Missing or changed evidence gets a reason, never a guessed hash. */
     struct ms_executable_evidence result = {0};
     char name[32];
     uint64_t start_before = 0;

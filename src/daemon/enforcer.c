@@ -373,6 +373,9 @@ link_compatible(struct bpf_link *link, size_t index)
 static enum ms_enforcer_pins
 real_inspect(void *context, const char *directory)
 {
+    /* Pinned objects may survive daemon restarts. Inspect all expected maps
+     * and links before adoption, because using an older or partial set with
+     * this userspace build could produce the wrong enforcement behavior. */
     bool any = false;
     bool compatible = true;
     (void)context;
@@ -859,6 +862,9 @@ bool
 ms_enforcer_attach(struct ms_enforcer *enforcer, const GArray *launcher_keys,
                    bool requested, struct ms_error *error)
 {
+    /* Adopt a compatible pinned set; otherwise build a new one, configure it,
+     * stage its pins, and promote them. The operation stays unsupported on
+     * failure, so the UI never labels an unattached response program active. */
     struct ms_error operation_error = {0};
     enum ms_enforcer_pins pins;
     void *instance = NULL;

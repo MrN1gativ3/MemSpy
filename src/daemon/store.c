@@ -70,6 +70,9 @@ read_user_version(sqlite3 *database, int *version, struct ms_error *error)
 static bool
 migrate(sqlite3 *database, struct ms_error *error)
 {
+    /* Schema changes run inside SQLite transactions. Each historical schema
+     * is advanced without discarding alerts; a failed upgrade rolls back
+     * instead of leaving a partly converted database for the daemon to use. */
     static const char schema[] =
         "BEGIN IMMEDIATE;"
         "CREATE TABLE alerts ("

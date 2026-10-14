@@ -6,6 +6,9 @@
 #include <stdio.h>
 #include <string.h>
 
+/* Alert JSON is the shared format for the daemon, CLI and UI. Keep parsing
+ * strict at this boundary: validate types, lengths and digests before data
+ * is copied into fixed-size C fields or shown as incident evidence. */
 static void
 set_error(struct ms_error *error, const char *code, const char *format, ...)
 {

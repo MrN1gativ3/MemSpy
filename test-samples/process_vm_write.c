@@ -8,6 +8,9 @@
 int
 main(void)
 {
+    /* A child shares the address of one test value with its parent. The
+     * parent changes that value through process_vm_writev, exercising a
+     * cross-process write without touching unrelated processes. */
     int pipefd[2];
     pid_t child;
     uintptr_t remote_address;

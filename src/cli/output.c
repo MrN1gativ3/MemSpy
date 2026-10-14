@@ -3,6 +3,7 @@
 #include <inttypes.h>
 #include <json-c/json.h>
 
+/* Human output is compact; JSON retains the complete alert record. */
 static const char *severity(const struct ms_alert *alert)
 {
     return alert->severity == MS_SEVERITY_HIGH ? "high" : "medium";

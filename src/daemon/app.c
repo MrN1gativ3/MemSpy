@@ -17,6 +17,10 @@
 #include "store.h"
 
 struct ms_app {
+    /* This is the daemon's coordinator: the sensor supplies observations,
+     * policy classifies them, storage keeps alerts, and the API publishes
+     * results to the UI and CLI. Response events enter through the enforcer
+     * and follow the same alert-storage path. */
     struct ms_policy *policy;
     struct ms_allowlist *allowlist;
     struct ms_store *store;
@@ -197,6 +201,9 @@ publish_journal(struct ms_app *app, const struct ms_alert *alert)
 static bool
 queue_push(struct ms_app *app, const struct ms_alert *alert)
 {
+    /* SQLite can become temporarily unavailable. Keep alerts in this bounded
+     * in-memory queue and retry during maintenance; if it fills, expose the
+     * loss in health instead of silently discarding evidence. */
     size_t slot;
     if (app->queue_length == MS_APP_QUEUE_CAPACITY) {
         apply_health(app, MS_HEALTH_ALERT_DROPPED, 1);
@@ -213,6 +220,9 @@ static void drain_queue(struct ms_app *app);
 static void
 accept_alert(struct ms_app *app, const struct ms_alert *alert)
 {
+    /* Preserve arrival order: queued alerts must reach storage before a new
+     * one gets its database ID. Publish to live subscribers even if storage
+     * is down, while health reports that history may be incomplete. */
     struct ms_alert stored = *alert;
     struct ms_error error = {0};
 
@@ -294,6 +304,10 @@ degrade_response(struct ms_app *app, const char *reason)
 static void
 initialize_response(struct ms_app *app, const struct ms_app_config *config)
 {
+    /* The saved preference says what was requested before restart, not what
+     * is enforcing now. Attach the BPF programs with response disabled,
+     * load exemptions, then enable only if support and the ptrace barrier
+     * both pass. Report requested, supported and active separately. */
     g_autoptr(GArray) keys = NULL;
     struct ms_enforcer_status status = {0};
     struct ms_error state_error = {0};
@@ -352,6 +366,9 @@ initialize_response(struct ms_app *app, const struct ms_app_config *config)
 void
 ms_app_maintain(struct ms_app *app, int64_t now_utc)
 {
+    /* Each sensor-loop iteration drains blocked-event telemetry and retries
+     * queued alerts. Periodically it also reopens failed storage and prunes
+     * records older than the retention window in bounded batches. */
     struct ms_error error = {0};
     if (app == NULL)
         return;
@@ -528,6 +545,10 @@ ms_app_new(const struct ms_app_config *config,
 bool
 ms_app_set_response(struct ms_app *app, bool enabled, struct ms_error *error)
 {
+    /* Changing the switch is a transaction from the user's perspective:
+     * update the kernel, check that existing tracing relationships remain
+     * safe, then save the preference. If either later step fails, restore
+     * the previous kernel state where possible and report the failure. */
     bool previous;
     struct ms_error rollback_error = {0};
 

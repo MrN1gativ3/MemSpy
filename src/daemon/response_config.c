@@ -32,6 +32,9 @@ set_error(struct ms_error *error, const char *code, const char *format, ...)
 static bool
 secure_regular_file(int descriptor, struct ms_error *error, const char *code)
 {
+    /* Response state and exemptions affect blocking policy. Accept only a
+     * regular file owned by the daemon's UID and not writable by other
+     * users; callers also open these paths without following symlinks. */
     struct stat metadata;
 
     if (fstat(descriptor, &metadata) != 0) {

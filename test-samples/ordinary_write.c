@@ -7,6 +7,8 @@
 int
 main(void)
 {
+    /* Negative control: even many write variants must not look like a
+     * cross-process write when the fd is only a regular temporary file. */
     char byte = 0;
     char path[] = "/tmp/memspy-write-XXXXXX";
     struct iovec vector = {.iov_base = &byte, .iov_len = sizeof byte};

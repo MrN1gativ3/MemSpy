@@ -83,6 +83,9 @@ bool
 ms_ptrace_barrier_check(const char *proc_root, const GArray *allowlist,
                         struct ms_error *error)
 {
+    /* Once enabled, the ptrace LSM rule can affect already-running tracers.
+     * Scan current tracing relationships first and refuse activation if a
+     * non-exempt tracer would unexpectedly lose access to its target. */
     GDir *directory;
     const char *name;
 

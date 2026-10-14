@@ -34,6 +34,10 @@ enum ms_alert_action {
 };
 
 enum ms_hash_status {
+    /* A digest can be absent for several different reasons: the process may
+     * have exited, the image may be memory-backed, or collection may have
+     * failed. Carry the reason to storage and UI instead of implying that
+     * an empty hash means the executable was benign. */
     MS_HASH_NOT_COLLECTED = 0,
     MS_HASH_COMPLETE,
     MS_HASH_PROCESS_EXITED,
@@ -46,6 +50,9 @@ enum ms_hash_status {
 };
 
 struct ms_alert {
+    /* This alert is the durable record passed through SQLite, the local API,
+     * CLI and UI. Subject, launcher, parent and target hashes refer to
+     * different executables; do not collapse them into one generic digest. */
     int64_t id;
     int64_t timestamp_utc;
     uint64_t observed_boottime_ns;

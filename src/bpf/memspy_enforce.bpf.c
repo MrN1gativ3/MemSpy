@@ -30,6 +30,10 @@ enum ms_intent_kind {
     MS_INTENT_PTRACE_ATTACH,
 };
 
+/* This map is the kernel-side response switch. The daemon loads enforcement
+ * programs first, then changes the value after safety checks. New client
+ * requests also require authorization; a loaded program with a zero value
+ * still permits operations. */
 struct {
     __uint(type, BPF_MAP_TYPE_ARRAY);
     __uint(max_entries, 1);
@@ -91,6 +95,9 @@ clear_event(struct ms_enforce_event *event)
 static __always_inline int
 capture_exec(const char *filename, const char *const *arguments)
 {
+    /* Capture the attempted filename and arguments on syscall entry. If the
+     * later LSM hook blocks exec, the new image never becomes a running
+     * process, so /proc cannot supply these details afterward. */
     __u64 process = bpf_get_current_pid_tgid();
     __u64 uid_gid = bpf_get_current_uid_gid();
     __u32 zero = 0;
@@ -193,6 +200,9 @@ static __always_inline bool
 task_allowed(struct task_struct *task, enum ms_response_rule rule,
              struct ms_launcher_key *launcher)
 {
+    /* Response exemptions are keyed by the launcher's executable device and
+     * inode together with the response rule. A path or comm can be renamed
+     * or spoofed, and an exemption for one rule must not authorize another. */
     struct ms_allowlist_key key = {.rule = rule};
 
     if (!launcher_key(task, launcher))
@@ -247,6 +257,9 @@ emit_simple_denial(void *context, enum ms_enforce_event_kind kind,
 static __always_inline int
 remember_intent(__u32 kind, __u32 target_pid)
 {
+    /* process_vm_writev and ptrace can reach the same ptrace access hook.
+     * Record the calling thread's syscall intent and target on entry so the
+     * LSM hook can apply the matching rule, then clear it on syscall exit. */
     __u64 process = bpf_get_current_pid_tgid();
     struct ms_enforce_intent intent = {.kind = kind, .target_pid = target_pid};
 
@@ -311,6 +324,9 @@ int BPF_PROG(block_suspicious_exec, struct linux_binprm *bprm, int prior_result)
 
     if (prior_result != 0)
         return prior_result;
+    /* LSM hooks are chained. Preserve a denial from an earlier module, and
+     * leave ordinary execution alone while the response switch is off.
+     * Detection remains independent of this enforcement path. */
     enabled = bpf_map_lookup_elem(&response_enabled, &zero);
     if (enabled == NULL || *enabled == 0)
         return 0;
@@ -348,6 +364,9 @@ int BPF_PROG(block_suspicious_exec, struct linux_binprm *bprm, int prior_result)
         ++counters->denied[kind];
     event = bpf_map_lookup_elem(&pending_exec, &process);
     if (event == NULL) {
+        /* Exec-entry capture is best-effort: an event may be missing from the
+         * pending map. Build a smaller record from the current task, but keep
+         * the denial decision; missing evidence is not an exemption. */
         event = bpf_map_lookup_elem(&enforce_scratch, &zero);
         if (event == NULL)
             return -MS_EACCES;

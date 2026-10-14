@@ -1,6 +1,8 @@
 #!/bin/sh
 set -eu
 
+# Remove only the listed MemSpy pins; never sweep unrelated bpffs entries.
+
 pin_dir=${1:-/sys/fs/bpf/memspy}
 
 if [ "$pin_dir" != /sys/fs/bpf/memspy ]; then

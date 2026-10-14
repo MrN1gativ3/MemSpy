@@ -11,6 +11,9 @@ enum ms_health_state {
 };
 
 struct ms_health {
+    /* Detection health and response health are separate. A healthy sensor
+     * can still report response_supported=false, and a saved request does
+     * not mean kernel enforcement is currently active. */
     enum ms_health_state state;
     bool protected;
     uint64_t lost_events;

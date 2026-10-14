@@ -6,6 +6,9 @@
 #endif
 
 #define MS_ENFORCE_EVENT_ABI 2U
+/* Kernel and userspace share this event layout. Fixed-size argument slots
+ * bound BPF work and perf-event size; truncation flags tell userspace when
+ * the original command line did not fit. Bump the ABI when layout changes. */
 #define MS_ENFORCE_MAX_ARGS 16U
 #define MS_ENFORCE_ARG_BYTES 2048U
 #define MS_ENFORCE_ARG_SLOT_BYTES (MS_ENFORCE_ARG_BYTES / MS_ENFORCE_MAX_ARGS)

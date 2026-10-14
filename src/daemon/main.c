@@ -56,6 +56,10 @@ ignore_blocked_alert(const struct ms_alert *alert, void *userdata)
 static int
 check_response(const char *pin_directory)
 {
+    /* The installer invokes this probe before starting the service. Attach
+     * response programs with enforcement disabled in a temporary pin
+     * directory, then remove them. A failed capability check must not
+     * overwrite the live daemon's pinned links. */
     g_autofree char *probe_directory =
         g_strdup_printf("%s_probe_%ld", pin_directory, (long)getpid());
     g_autoptr(GArray) keys = g_array_new(false, false, sizeof(struct ms_allowlist_key));

@@ -3,6 +3,7 @@
 #include <libnotify/notify.h>
 #include <stdio.h>
 
+/* Notification callbacks retain only an alert ID, not a pointer into the UI list. */
 struct notification_action {
     int64_t alert_id;
     void (*open_alert)(int64_t, void *);

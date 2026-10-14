@@ -4,6 +4,7 @@
 #include <libayatana-appindicator/app-indicator.h>
 #include <stdio.h>
 
+/* The tray summarizes health and unread severity; the window owns full details. */
 struct ms_indicator {
     AppIndicator *indicator;
     GtkWidget *menu;

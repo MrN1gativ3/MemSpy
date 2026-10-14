@@ -10,6 +10,9 @@ extern char **environ;
 int
 main(int argc, char **argv)
 {
+    /* Copy this harmless fixture into a memfd and execute from that fd.
+     * The child marker prevents an exec loop; this should exercise the
+     * MEMFD_EXEC rule without downloading or running malware. */
     char buffer[8192];
     ssize_t count;
     int source;

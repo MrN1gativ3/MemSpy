@@ -44,6 +44,9 @@ ms_ui_state_disconnect(struct ms_ui_state *state)
 bool
 ms_ui_state_apply_alert(struct ms_ui_state *state, const struct ms_alert *alert)
 {
+    /* Reconnecting replays stored alerts before resuming live updates.
+     * Compare IDs with the last accepted alert so the indicator and desktop
+     * notifications do not treat the same stored incident as new twice. */
     if (state == NULL || alert == NULL || alert->id < 0 ||
         (alert->id == 0 && alert->observed_boottime_ns == 0) ||
         (alert->id > 0 && alert->id <= state->last_alert_id))

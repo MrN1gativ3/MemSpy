@@ -54,6 +54,9 @@ write_line(int descriptor, const char *line)
 static json_object *
 read_reply(int descriptor, struct ms_error *error)
 {
+    /* The daemon and client use newline-delimited JSON over a local socket.
+     * Read at most one protocol-sized message before parsing so a malformed
+     * or hostile peer cannot make the client consume unbounded memory. */
     char *buffer = malloc(MS_MAX_MESSAGE_BYTES + 1U);
     size_t used = 0;
     json_object *reply;

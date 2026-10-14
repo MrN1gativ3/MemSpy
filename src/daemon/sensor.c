@@ -170,6 +170,10 @@ ms_sensor_observation_from_event(const struct ms_kernel_event *event,
                                  struct ms_observation *observation,
                                  struct ms_error *error)
 {
+    /* The BPF record carries only facts available cheaply at the tracepoint.
+     * Read executable, command line, user and lineage from /proc here. A
+     * short-lived task can exit between the event and these reads, so mark
+     * enrichment incomplete rather than presenting missing fields as facts. */
     struct timespec now;
     bool actor_complete;
 

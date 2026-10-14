@@ -1,6 +1,11 @@
 /build*/
 /.superpowers/
 /premium-audit.json
+/memspy-results/
+/samples/
+/.agents/
+/.aws/
+/.codex/
 
 *.o
 __pycache__/

@@ -154,10 +154,6 @@ install_symlink('memspyctl', pointing_to: memspy_bindir / 'memspyctl',
 install_data('config/allowlist.conf', install_dir: '/etc/memspy')
 install_data('config/response-allowlist.conf',
              install_dir: '/etc/memspy')
-install_data('packaging/common/migrate-legacy.sh',
-             install_dir: memspy_libexecdir,
-             install_mode: 'rwxr-xr-x',
-             rename: 'migrate-legacy')
 install_data('packaging/common/cleanup-bpf.sh',
              install_dir: memspy_libexecdir,
              install_mode: 'rwxr-xr-x',

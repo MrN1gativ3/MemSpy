@@ -12,6 +12,9 @@
 
 int main(void)
 {
+    /* The child owns a disposable memory page and tells its parent where
+     * it is. The parent writes through that child's /proc/<pid>/mem file,
+     * giving the detector a controlled procfs-memory-write example. */
     int ready[2];
     int release[2];
     pid_t child;

@@ -12,6 +12,10 @@
 #define MS_ALLOWLIST_LINE_BYTES (MS_PATH_BYTES + MS_RULE_ID_BYTES + 32U)
 #define MS_ALLOWLIST_MAX_ENTRIES 4096U
 
+/* Each detection exclusion names one rule and one exact executable path.
+ * It suppresses that alert only; it does not permit the executable through
+ * a response-mode block. Response exemptions have a separate file and
+ * kernel map so the two decisions cannot be confused. */
 struct allowlist_entry {
     char *rule_id;
     char *path;

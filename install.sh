@@ -49,6 +49,7 @@ if [ "$kernel_major" -lt 5 ] || { [ "$kernel_major" -eq 5 ] && [ "$kernel_minor"
 fi
 
 reader_supplied=false
+# Prefer the active session; an explicit profile resolves ambiguous desktops.
 [ "$#" -ge 1 ] && [ "${1:-}" != headless ] && reader_supplied=true
 desktop_user=${1:-${SUDO_USER:-}}
 desktop_environment=${2:-}
@@ -186,13 +187,10 @@ bpftool version >/dev/null 2>&1 || fail "bpftool is installed but cannot run"
 script_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
 build_dir="$script_dir/build-install"
 
-if systemctl is-active --quiet filelessd.service; then
-    systemctl stop filelessd.service
-fi
-"$script_dir/packaging/common/migrate-legacy.sh"
-
 saved_allowlist=$(mktemp)
 saved_response_allowlist=$(mktemp)
+# Meson installs default configuration files on each install. Preserve any
+# administrator edits first, then restore them even if a later step fails.
 had_allowlist=false
 had_response_allowlist=false
 restore_allowlist()
@@ -227,6 +225,8 @@ if [ "$desktop_environment" = headless ]; then
 else
     desktop_option=enabled
 fi
+# Reconfigure an existing build directory when switching desktop/headless
+# profiles; the chosen profile determines whether GTK is built and installed.
 if [ -f "$build_dir/meson-private/coredata.dat" ]; then
     meson setup --reconfigure "$build_dir" --prefix=/opt/memspy --buildtype=release \
         -Dintegration_tests=false -Ddesktop_ui="$desktop_option"
@@ -241,6 +241,9 @@ meson install -C "$build_dir"
 restore_allowlist
 reboot_required=false
 response_probe=
+# Detection works without BPF LSM. Probe response support separately; if the
+# kernel has not enabled BPF LSM, prepare its boot configuration and tell the
+# operator a reboot is required before blocking can be active.
 if response_probe=$("$build_dir/memspyd" --check-response 2>&1); then
     printf '%s\n' "$response_probe"
     install -d -m 0700 -o root -g root /sys/fs/bpf/memspy
@@ -274,34 +277,11 @@ if ! systemctl is-active --quiet memspyd; then
     fail "memspyd did not start"
 fi
 
-systemctl disable filelessd.service >/dev/null 2>&1 || true
-rm -f /run/filelessd/filelessd.sock \
-    /usr/bin/filelessd \
-    /usr/bin/fileless-ui \
-    /usr/libexec/filelessd/fileless.bpf.o \
-    /usr/lib/systemd/system/filelessd.service \
-    /usr/lib/tmpfiles.d/filelessd.conf \
-    /usr/lib/sysusers.d/filelessd.conf \
-    /usr/share/applications/org.fileless.DetectorUI.desktop \
-    /usr/share/fileless-detector/fileless-ui.css \
-    /usr/share/icons/hicolor/scalable/status/fileless-healthy-symbolic.svg \
-    /usr/share/icons/hicolor/scalable/status/fileless-medium-symbolic.svg \
-    /usr/share/icons/hicolor/scalable/status/fileless-high-symbolic.svg \
-    /usr/share/icons/hicolor/scalable/status/fileless-offline-symbolic.svg \
-    /usr/share/man/man1/fileless-ui.1 \
-    /usr/share/man/man1/fileless-ui.1.gz \
-    /usr/share/man/man8/filelessd.8 \
-    /usr/share/man/man8/filelessd.8.gz \
-    /etc/xdg/autostart/org.fileless.DetectorUI.desktop
-rmdir /run/filelessd /usr/libexec/filelessd /usr/share/fileless-detector 2>/dev/null || true
-groupdel filelessd-ui >/dev/null 2>&1 || true
-
 rm -f /usr/bin/memspyd \
     /usr/bin/memspyctl \
     /usr/bin/memspy-ui \
     /usr/libexec/memspy/memspy.bpf.o \
     /usr/libexec/memspy/memspy_enforce.bpf.o \
-    /usr/libexec/memspy/migrate-legacy \
     /usr/libexec/memspy/cleanup-bpf \
     /usr/lib/systemd/system/memspyd.service \
     /usr/share/memspy/memspy-ui.css

@@ -10,6 +10,9 @@ extern char **environ;
 int
 main(int argc, char **argv)
 {
+    /* Execute a copy of this fixture after unlinking its directory entry.
+     * The open fd keeps the image available to execveat, while the pathname
+     * is deleted; the child marker prevents repeated copying. */
     char path[] = "/tmp/memspy-deleted-XXXXXX";
     char buffer[8192];
     ssize_t count;

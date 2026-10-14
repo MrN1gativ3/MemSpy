@@ -7,6 +7,9 @@
 #include <systemd/sd-journal.h>
 #include <syslog.h>
 
+/* Persisted alerts also go to journald with searchable MemSpy fields and
+ * their full JSON record. Server operators can inspect or forward these
+ * entries without running the desktop UI; SQLite remains alert history. */
 static void set_error(struct ms_error *error, const char *format, ...)
 {
     va_list args;

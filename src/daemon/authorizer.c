@@ -127,6 +127,10 @@ bool
 ms_authorizer_check(struct ms_authorizer *authorizer,
                     const struct ms_peer_identity *peer, struct ms_error *error)
 {
+    /* The local socket identifies a client by PID and UID, but PIDs are
+     * reusable. Verify the process start time again before constructing the
+     * PolicyKit subject, or a replacement process could inherit permission
+     * intended for the original connection. */
     GVariantBuilder subject_details;
     GVariantBuilder request_details;
     g_autoptr(GVariant) reply = NULL;
