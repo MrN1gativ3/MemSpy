@@ -1,4 +1,4 @@
-# memspy-ui(1)
+# MemSpy UI guide
 
 `memspy-ui` is the unprivileged GNOME and KDE Plasma indicator and alert window. Add the desktop user to `memspy-ui`, then log out and back in. It displays High and Medium alerts but sends native notifications only for High alerts.
 

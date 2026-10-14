@@ -1,4 +1,4 @@
-# memspyctl(1)
+# MemSpy CLI guide
 
 `memspyctl` is MemSpy's non-interactive local administration client. It connects only to `/run/memspy/memspy.sock`; membership in the trusted `memspy-ui` group is required for unprivileged access.
 

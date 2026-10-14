@@ -1,4 +1,4 @@
-# memspyd(8)
+# MemSpy daemon guide
 
 `memspyd` is the privileged eBPF detection service and optional memfd-execution response authority. It accepts `--config`, `--database`, `--socket`, `--foreground`, `--check-response`, `--version`, and `--help`. Package defaults are `/etc/memspy/allowlist.conf`, `/var/lib/memspy/alerts.db`, and `/run/memspy/memspy.sock`.
 
