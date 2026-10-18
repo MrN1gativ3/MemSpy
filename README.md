@@ -47,18 +47,32 @@ Log out and back in once after a GUI installation, then run `memspy-ui`.
 
 ## CLI
 
-`memspyctl` is the primary interface for headless servers:
+`memspyctl` is the primary interface for headless servers. For non-root access, install with `sudo ./install.sh "$USER" headless`, then log out and back in so your `memspy-ui` group membership takes effect.
+
+Check whether the detector and alert storage are healthy, whether events were lost, and whether Response mode is actually active:
 
 ```sh
 memspyctl status
+```
+
+Investigate recent incidents. Use the ID from `alerts` in place of `42`; `show` prints readable details, while `export` saves the complete JSON record, including available hashes:
+
+```sh
 memspyctl alerts --limit 20
+memspyctl alerts --minimum high --limit 20
 memspyctl show 42
 memspyctl export 42 > alert-42.json
+```
+
+Turn blocking on or off when needed, then confirm the reported state. Changing Response mode requires PolicyKit administrator authorization; a requested mode is not necessarily active:
+
+```sh
 memspyctl response on
+memspyctl status
 memspyctl response off
 ```
 
-Use `--json` for automation. MemSpy exposes no network listener; the CLI and GTK application use the local Unix socket at `/run/memspy/memspy.sock`.
+For automation, put `--json` before the command, for example `memspyctl --json status` or `memspyctl --json alerts --limit 20`. MemSpy exposes no network listener; the CLI and GTK application use the local Unix socket at `/run/memspy/memspy.sock`.
 
 Expanded incidents show the applicable actor, executed image, target, launcher, and parent paths. MemSpy records MD5 for IOC compatibility, SHA-256 as the primary hash, and an exact reason when an image cannot be hashed. Images larger than 128 MiB are not hashed.
 
@@ -100,12 +114,6 @@ meson setup build --buildtype=debug -Db_sanitize=address,undefined
 meson compile -C build
 ASAN_OPTIONS=detect_leaks=0 \
   meson test -C build --no-suite privileged --print-errorlogs
-```
-
-Run kernel enforcement tests only inside a disposable VM:
-
-```sh
-sudo sh tests/vm/run_matrix.sh build
 ```
 
 ## Important paths
