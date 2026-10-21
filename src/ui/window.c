@@ -278,7 +278,7 @@ create_alert_row(struct alert_view *view)
     GtkWidget *heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *severity_icon = gtk_image_new_from_icon_name(
         view->alert.severity == MS_SEVERITY_HIGH ?
-        "memspy-high-symbolic" : "memspy-medium-symbolic", GTK_ICON_SIZE_BUTTON);
+        "memspy-high" : "memspy-medium", GTK_ICON_SIZE_BUTTON);
     GtkWidget *severity_label = gtk_label_new(severity);
     GtkWidget *outcome_label = gtk_label_new(outcome);
     GtkWidget *rule_label = gtk_label_new(view->alert.rule_id);
@@ -596,7 +596,7 @@ ms_window_new(GtkApplication *application)
     detector_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     response_row = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 10);
     status_separator = gtk_separator_new(GTK_ORIENTATION_VERTICAL);
-    window->status_icon = gtk_image_new_from_icon_name("memspy-offline-symbolic",
+    window->status_icon = gtk_image_new_from_icon_name("memspy-offline",
                                                        GTK_ICON_SIZE_BUTTON);
     add_class(window->status_icon, "memspy-state-icon");
     window->spinner = gtk_spinner_new();
@@ -690,7 +690,7 @@ ms_window_set_loading(struct ms_window *window)
     gtk_label_set_text(GTK_LABEL(window->status_label), "Connecting to detector…");
     gtk_label_set_text(GTK_LABEL(window->status_detail),
                        "Establishing a secure local connection");
-    gtk_image_set_from_icon_name(GTK_IMAGE(window->status_icon), "memspy-offline-symbolic",
+    gtk_image_set_from_icon_name(GTK_IMAGE(window->status_icon), "memspy-offline",
                                  GTK_ICON_SIZE_BUTTON);
     gtk_spinner_start(GTK_SPINNER(window->spinner));
     add_class(window->status_box, "memspy-health-offline");
@@ -731,13 +731,13 @@ ms_window_set_health(struct ms_window *window, const struct ms_health *health)
     gtk_label_set_text(GTK_LABEL(window->response_error), "");
     if (health->state == MS_HEALTH_HEALTHY && health->protected)
         set_status(window, "Monitoring active", "Kernel probes and alert storage are healthy",
-                   "memspy-healthy-symbolic", "memspy-health-healthy");
+                   "memspy-healthy", "memspy-health-healthy");
     else if (health->state == MS_HEALTH_FAILED)
         set_status(window, "Monitoring stopped", "Detection is currently unavailable",
-                   "memspy-offline-symbolic", "memspy-health-offline");
+                   "memspy-offline", "memspy-health-offline");
     else
         set_status(window, "Monitoring degraded", "Detection continues with reduced coverage",
-                   "memspy-medium-symbolic", "memspy-health-medium");
+                   "memspy-medium", "memspy-health-medium");
     update_response_control(window);
     update_empty_state(window);
 }
@@ -751,7 +751,7 @@ ms_window_set_offline(struct ms_window *window, const char *message, const char 
     window->response_connected = false;
     set_status(window, message == NULL ? "Detector unavailable" : message,
                detail == NULL ? "Detection is currently unavailable" : detail,
-               "memspy-offline-symbolic", "memspy-health-offline");
+               "memspy-offline", "memspy-health-offline");
     gtk_label_set_text(GTK_LABEL(window->response_error), "");
     update_response_control(window);
     update_empty_state(window);

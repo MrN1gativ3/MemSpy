@@ -46,7 +46,7 @@ ms_indicator_new(void (*open)(void *), void (*quit)(void *), void *userdata)
     indicator->userdata = userdata;
     indicator->indicator = g_object_new(APP_INDICATOR_TYPE,
                                          "id", "memspy",
-                                         "icon-name", "memspy-offline-symbolic",
+                                         "icon-name", "memspy-offline",
                                          "category", "SystemServices",
                                          NULL);
     if (indicator->indicator == NULL) {
@@ -79,8 +79,8 @@ ms_indicator_update(struct ms_indicator *indicator, enum ms_indicator_state stat
                     const struct ms_alert *latest)
 {
     static const char *icons[] = {
-        "memspy-offline-symbolic", "memspy-healthy-symbolic",
-        "memspy-medium-symbolic", "memspy-high-symbolic",
+        "memspy-offline", "memspy-healthy",
+        "memspy-medium", "memspy-high",
     };
     static const char *labels[] = {
         "Detector unavailable", "Monitoring active",

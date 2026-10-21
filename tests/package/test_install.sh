@@ -95,7 +95,7 @@ fi
 if [ "$profile" = desktop ]; then
     test -f "$stage/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg"
     for icon in healthy medium high offline; do
-        test -f "$stage/usr/share/icons/hicolor/scalable/status/memspy-$icon-symbolic.svg"
+        test -f "$stage/usr/share/icons/hicolor/scalable/status/memspy-$icon.svg"
     done
 else
     test ! -e "$stage/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg"

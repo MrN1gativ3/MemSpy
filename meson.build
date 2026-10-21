@@ -180,10 +180,10 @@ if desktop_enabled
   install_data('data/icons/org.memspy.MemSpyUI.svg',
                install_dir: '/usr/share/icons/hicolor/scalable/apps')
   install_data(
-    'data/icons/memspy-healthy-symbolic.svg',
-    'data/icons/memspy-medium-symbolic.svg',
-    'data/icons/memspy-high-symbolic.svg',
-    'data/icons/memspy-offline-symbolic.svg',
+    'data/icons/memspy-healthy.svg',
+    'data/icons/memspy-medium.svg',
+    'data/icons/memspy-high.svg',
+    'data/icons/memspy-offline.svg',
     install_dir: '/usr/share/icons/hicolor/scalable/status',
   )
   install_man('docs/memspy-ui.1', install_dir: '/usr/share/man/man1')
