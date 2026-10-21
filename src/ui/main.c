@@ -430,8 +430,7 @@ activate(GtkApplication *application, gpointer userdata)
     struct ui_app *ui = userdata;
     struct ms_error error = {0};
     if (ui->window != NULL) {
-        if (!ui->background)
-            open_window(ui);
+        open_window(ui);
         return;
     }
     ui->application = application;

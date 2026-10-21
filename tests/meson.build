@@ -230,6 +230,9 @@ ui_test = executable(
 )
 
 test('ui', ui_test)
+test('ui-activation', find_program('sh'),
+     args: [meson.current_source_dir() / 'ui/test_activation.sh', memspy_ui],
+     timeout: 30)
 endif
 
 foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'ordinary_exec', 'ordinary_write']

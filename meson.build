@@ -177,6 +177,8 @@ if desktop_enabled
   install_data('packaging/common/org.memspy.MemSpyUI-autostart.desktop',
                install_dir: '/etc/xdg/autostart',
                rename: 'org.memspy.MemSpyUI.desktop')
+  install_data('data/icons/org.memspy.MemSpyUI.svg',
+               install_dir: '/usr/share/icons/hicolor/scalable/apps')
   install_data(
     'data/icons/memspy-healthy-symbolic.svg',
     'data/icons/memspy-medium-symbolic.svg',

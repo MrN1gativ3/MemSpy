@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <title>MemSpy</title>
+  <rect x="3" y="3" width="58" height="58" rx="15" fill="#243145"/>
+  <path d="M32 8 51 15v15c0 13-7.7 22.5-19 27C20.7 52.5 13 43 13 30V15Z" fill="#e9f0f7"/>
+  <path d="M32 14 45 18.8V30c0 9.3-4.7 16.3-13 20.3C23.7 46.3 19 39.3 19 30V18.8Z" fill="#375370"/>
+  <path d="M21.5 32c3.2-5.5 6.7-8.2 10.5-8.2s7.3 2.7 10.5 8.2c-3.2 5.5-6.7 8.2-10.5 8.2s-7.3-2.7-10.5-8.2Z" fill="#e9f0f7"/>
+  <circle cx="32" cy="32" r="6.4" fill="#3dacc1"/>
+  <circle cx="32" cy="32" r="2.8" fill="#243145"/>
+</svg>

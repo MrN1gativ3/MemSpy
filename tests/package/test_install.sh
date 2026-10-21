@@ -75,6 +75,7 @@ if [ "$profile" = desktop ]; then
     grep -q '^OnlyShowIn=GNOME;KDE;' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
     grep -q '^Exec=/opt/memspy/bin/memspy-ui$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
     grep -q '^Exec=/opt/memspy/bin/memspy-ui --background$' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
+    grep -q '^Icon=org.memspy.MemSpyUI$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
 fi
 
 "$build_dir/memspyd" --help | grep -q '/run/memspy/memspy.sock'
@@ -91,7 +92,10 @@ if "$stage/opt/memspy/libexec/memspy/cleanup-bpf" /tmp/not-memspy >/dev/null 2>&
 fi
 
 if [ "$profile" = desktop ]; then
+    test -f "$stage/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg"
     for icon in healthy medium high offline; do
         test -f "$stage/usr/share/icons/hicolor/scalable/status/memspy-$icon-symbolic.svg"
     done
+else
+    test ! -e "$stage/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg"
 fi
