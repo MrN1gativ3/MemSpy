@@ -43,7 +43,7 @@ sudo ./install.sh "$USER" headless
 
 The application is installed under `/opt/memspy`. Configuration remains in `/etc/memspy`, persistent state in `/var/lib/memspy`, and runtime state in `/run/memspy`.
 
-Log out and back in once after a GUI installation, then run `memspy-ui`.
+Log out and back in after a GUI installation, then run `memspy-ui`. On Fedora GNOME, reboot instead so the desktop session picks up the `memspy-ui` group and AppIndicator extension.
 
 ## CLI
 

@@ -231,7 +231,8 @@ ui_test = executable(
 
 test('ui', ui_test)
 test('ui-activation', find_program('sh'),
-     args: [meson.current_source_dir() / 'ui/test_activation.sh', memspy_ui],
+     args: [meson.current_source_dir() / 'ui/test_activation.sh', memspy_ui,
+            meson.project_source_root()],
      timeout: 30)
 endif
 

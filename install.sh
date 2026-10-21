@@ -14,6 +14,7 @@ Usage: sudo ./install.sh [reader-user] [gnome|kde|headless]
 
 Build, test, install, and start MemSpy on Ubuntu, Debian, Fedora, and Arch Linux.
 The desktop profile is detected automatically; servers without GNOME/KDE use headless.
+On Fedora GNOME, reboot after adding a desktop user to memspy-ui.
 EOF
 }
 
@@ -238,6 +239,15 @@ meson compile -C "$build_dir"
 meson test -C "$build_dir" --no-suite privileged --print-errorlogs
 meson install -C "$build_dir"
 
+if [ "$desktop_environment" != headless ]; then
+    icon=/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg
+    test -r "$icon" || fail "the desktop icon was not installed at $icon"
+    if command -v gtk-update-icon-cache >/dev/null 2>&1; then
+        gtk-update-icon-cache -f -q /usr/share/icons/hicolor || \
+            echo "MemSpy installer: could not refresh the icon cache" >&2
+    fi
+fi
+
 restore_allowlist
 reboot_required=false
 response_probe=
@@ -267,6 +277,22 @@ systemd-sysusers /usr/lib/sysusers.d/memspyd.conf
 systemd-tmpfiles --create /usr/lib/tmpfiles.d/memspyd.conf || true
 if [ -n "$desktop_user" ]; then
     usermod -aG memspy-ui -- "$desktop_user"
+    id -nG "$desktop_user" | tr ' ' '\n' | grep -qx memspy-ui || \
+        fail "could not add '$desktop_user' to the memspy-ui group"
+fi
+if [ "$desktop_environment" = gnome ]; then
+    reader_uid=$(id -u "$desktop_user")
+    reader_runtime=/run/user/$reader_uid
+    if [ -S "$reader_runtime/bus" ] && command -v gnome-extensions >/dev/null 2>&1; then
+        if ! runuser -u "$desktop_user" -- env \
+            XDG_RUNTIME_DIR="$reader_runtime" \
+            DBUS_SESSION_BUS_ADDRESS="unix:path=$reader_runtime/bus" \
+            gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com; then
+            echo "MemSpy installer: enable AppIndicator after logging in with: gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com" >&2
+        fi
+    else
+        echo "MemSpy installer: enable AppIndicator after logging in with: gnome-extensions enable appindicatorsupport@rgcjonas.gmail.com" >&2
+    fi
 fi
 systemctl daemon-reload
 systemctl enable --now memspyd
@@ -298,7 +324,12 @@ if [ "$desktop_environment" = headless ]; then
         echo "Log out and back in as $desktop_user before using memspyctl without sudo."
     fi
 else
-    echo "Log out and back in as $desktop_user, then run: memspy-ui"
+    if [ "$distribution" = fedora ] && [ "$desktop_environment" = gnome ]; then
+        echo "Reboot so GNOME refreshes group access and desktop integration: sudo reboot"
+        echo "Then log in as $desktop_user and run: memspy-ui"
+    else
+        echo "Log out and back in as $desktop_user, then run: memspy-ui"
+    fi
 fi
 if [ "$reboot_required" = true ]; then
     echo "BPF LSM was enabled in the bootloader configuration."

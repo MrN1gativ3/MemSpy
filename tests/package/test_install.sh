@@ -75,7 +75,8 @@ if [ "$profile" = desktop ]; then
     grep -q '^OnlyShowIn=GNOME;KDE;' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
     grep -q '^Exec=/opt/memspy/bin/memspy-ui$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
     grep -q '^Exec=/opt/memspy/bin/memspy-ui --background$' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
-    grep -q '^Icon=org.memspy.MemSpyUI$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
+    grep -q '^Icon=/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg$' \
+        "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
 fi
 
 "$build_dir/memspyd" --help | grep -q '/run/memspy/memspy.sock'

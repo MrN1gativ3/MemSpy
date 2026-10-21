@@ -12,6 +12,7 @@ sh -n "$legacy_installer"
 help=$("$installer" --help)
 printf '%s\n' "$help" | grep -q '^Usage: sudo ./install.sh'
 printf '%s\n' "$help" | grep -q 'Ubuntu, Debian, Fedora, and Arch Linux'
+printf '%s\n' "$help" | grep -q 'reboot after adding a desktop user to memspy-ui'
 test "$("$legacy_installer" --help)" = "$help"
 grep -q 'libpolkit-gobject-1-dev' "$installer"
 grep -q 'polkit-devel' "$installer"
