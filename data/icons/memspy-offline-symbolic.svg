@@ -1,4 +1,9 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>MemSpy monitoring unavailable</title>
   <style>.ColorScheme-Text{color:#2e3436}</style>
-  <path class="ColorScheme-Text" fill="currentColor" d="M8 1 14 3v4c0 4-2.5 6.7-6 8-3.5-1.3-6-4-6-8V3Zm-2.8 4.1L4.1 6.2 6.9 9l-2.8 2.8 1.1 1.1L8 10.1l2.8 2.8 1.1-1.1L9.1 9l2.8-2.8-1.1-1.1L8 7.9Z"/>
+  <g class="ColorScheme-Text" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 3.25h6A1.75 1.75 0 0 1 12.75 5v6A1.75 1.75 0 0 1 11 12.75H5A1.75 1.75 0 0 1 3.25 11V5A1.75 1.75 0 0 1 5 3.25Z" stroke-width="1.5"/>
+    <path d="M1.5 5.5h1.75m-1.75 5h1.75m9.5-5h1.75m-1.75 5h1.75" stroke-width="1.5"/>
+    <path d="M5.5 8h1.2m2.6 0h1.2M6 5.9l4 4.2" stroke-width="1.6"/>
+  </g>
 </svg>

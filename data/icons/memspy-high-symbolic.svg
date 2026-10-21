@@ -1,4 +1,10 @@
 <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 16 16">
+  <title>MemSpy high alert</title>
   <style>.ColorScheme-Text{color:#2e3436}</style>
-  <path class="ColorScheme-Text" fill="currentColor" d="M8 1 14 3v4c0 4-2.5 6.7-6 8-3.5-1.3-6-4-6-8V3Zm-.9 3 .2 6h1.4l.2-6ZM8 13a1 1 0 1 0 0-2 1 1 0 0 0 0 2"/>
+  <g class="ColorScheme-Text" fill="none" stroke="currentColor" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 3.25h6A1.75 1.75 0 0 1 12.75 5v6A1.75 1.75 0 0 1 11 12.75H5A1.75 1.75 0 0 1 3.25 11V5A1.75 1.75 0 0 1 5 3.25Z" stroke-width="1.5"/>
+    <path d="M1.5 5.5h1.75m-1.75 5h1.75m9.5-5h1.75m-1.75 5h1.75" stroke-width="1.5"/>
+    <path d="M8 5.3v2.5" stroke-width="1.6"/>
+  </g>
+  <circle class="ColorScheme-Text" cx="8" cy="10.6" r="1" fill="currentColor"/>
 </svg>
