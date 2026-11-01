@@ -8,6 +8,12 @@ struct alert_view {
     GtkWidget *row;
 };
 
+enum outcome_filter {
+    OUTCOME_ALL,
+    OUTCOME_BLOCKED,
+    OUTCOME_DETECTED,
+};
+
 struct ms_window {
     GtkWidget *window;
     GtkWidget *status_box;
@@ -23,8 +29,12 @@ struct ms_window {
     GtkWidget *empty_title;
     GtkWidget *empty_detail;
     GtkWidget *filter_buttons[3];
+    GtkWidget *outcome_buttons[3];
+    GtkWidget *search_entry;
     GPtrArray *alerts;
     enum ms_ui_filter filter;
+    enum outcome_filter outcome_filter;
+    char *search_query;
     bool monitoring;
     bool response_connected;
     bool response_supported;
@@ -42,19 +52,50 @@ add_class(GtkWidget *widget, const char *name)
     gtk_style_context_add_class(gtk_widget_get_style_context(widget), name);
 }
 
+static bool
+contains_query(const char *value, const char *query)
+{
+    char *folded = g_utf8_casefold(value, -1);
+    bool found = strstr(folded, query) != NULL;
+    g_free(folded);
+    return found;
+}
+
+static bool
+matches_alert(const struct ms_window *window, const struct ms_alert *alert)
+{
+    char numbers[128];
+    const char *fields[] = {
+        alert->rule_id, alert->comm, alert->username, alert->exe, alert->cmdline,
+        alert->parent_comm, alert->parent_exe, alert->launcher_exe, alert->target_exe,
+    };
+
+    if (window->filter == MS_UI_FILTER_HIGH && alert->severity != MS_SEVERITY_HIGH)
+        return false;
+    if (window->filter == MS_UI_FILTER_MEDIUM && alert->severity != MS_SEVERITY_MEDIUM)
+        return false;
+    if (window->outcome_filter == OUTCOME_BLOCKED && alert->action != MS_ALERT_BLOCKED)
+        return false;
+    if (window->outcome_filter == OUTCOME_DETECTED && alert->action != MS_ALERT_DETECTED)
+        return false;
+    if (window->search_query == NULL || window->search_query[0] == '\0')
+        return true;
+    for (unsigned int index = 0; index < G_N_ELEMENTS(fields); ++index) {
+        if (contains_query(fields[index], window->search_query))
+            return true;
+    }
+    snprintf(numbers, sizeof numbers, "%lld %d %d %u %d", (long long)alert->id,
+             alert->pid, alert->ppid, (unsigned int)alert->uid, alert->target_pid);
+    return contains_query(numbers, window->search_query);
+}
+
 static gboolean
 filter_row(GtkListBoxRow *row, gpointer userdata)
 {
-    /* Filtering changes which incident rows are visible, not their stored
-     * widgets. This preserves an analyst's expanded details and avoids
-     * rebuilding the list while switching between severity views. */
-    struct ms_window *window = userdata;
+    /* Filtering keeps the incident widgets and their expansion state intact. */
+    const struct ms_window *window = userdata;
     const struct alert_view *view = g_object_get_data(G_OBJECT(row), "memspy-alert");
-    if (window->filter == MS_UI_FILTER_ALL)
-        return true;
-    if (window->filter == MS_UI_FILTER_HIGH)
-        return view->alert.severity == MS_SEVERITY_HIGH;
-    return view->alert.severity == MS_SEVERITY_MEDIUM;
+    return matches_alert(window, &view->alert);
 }
 
 static gint
@@ -76,8 +117,17 @@ update_empty_state(struct ms_window *window)
     };
     const char *title = titles[window->filter];
 
+    if (window->search_query != NULL && window->search_query[0] != '\0')
+        title = "No matching alerts";
+    else if (window->outcome_filter == OUTCOME_BLOCKED)
+        title = "No blocked alerts";
+    else if (window->outcome_filter == OUTCOME_DETECTED)
+        title = "No detected alerts";
+
     gtk_label_set_text(GTK_LABEL(window->empty_title), title);
-    gtk_label_set_text(GTK_LABEL(window->empty_detail), window->monitoring ?
+    gtk_label_set_text(GTK_LABEL(window->empty_detail),
+                       window->search_query != NULL && window->search_query[0] != '\0' ?
+                       "Try another search or filter" : window->monitoring ?
                        "Monitoring the last 30 days" : "Showing available alert history");
     atk_object_set_name(gtk_widget_get_accessible(window->empty_box), title);
 }
@@ -90,6 +140,31 @@ filter_toggled(GtkToggleButton *button, gpointer userdata)
         return;
     window->filter = (enum ms_ui_filter)GPOINTER_TO_INT(
         g_object_get_data(G_OBJECT(button), "memspy-filter"));
+    if (window->list != NULL)
+        gtk_list_box_invalidate_filter(GTK_LIST_BOX(window->list));
+    update_empty_state(window);
+}
+
+static void
+outcome_toggled(GtkToggleButton *button, gpointer userdata)
+{
+    struct ms_window *window = userdata;
+    if (!gtk_toggle_button_get_active(button))
+        return;
+    window->outcome_filter = (enum outcome_filter)GPOINTER_TO_INT(
+        g_object_get_data(G_OBJECT(button), "memspy-outcome-filter"));
+    if (window->list != NULL)
+        gtk_list_box_invalidate_filter(GTK_LIST_BOX(window->list));
+    update_empty_state(window);
+}
+
+static void
+search_changed(GtkSearchEntry *entry, gpointer userdata)
+{
+    struct ms_window *window = userdata;
+    g_free(window->search_query);
+    window->search_query = g_utf8_casefold(gtk_entry_get_text(GTK_ENTRY(entry)), -1);
+    g_strstrip(window->search_query);
     if (window->list != NULL)
         gtk_list_box_invalidate_filter(GTK_LIST_BOX(window->list));
     update_empty_state(window);
@@ -195,6 +270,18 @@ hash_status_text(enum ms_hash_status status)
     return "Not collected";
 }
 
+static bool
+missing_path(const char *path)
+{
+    return path == NULL || path[0] == '\0' || strcmp(path, "?") == 0;
+}
+
+static const char *
+display_path(const char *path)
+{
+    return missing_path(path) ? "Unavailable" : path;
+}
+
 static void
 add_evidence_group(struct detail_section *section, const char *title, const char *path,
                    const char *md5, const char *sha256, enum ms_hash_status status)
@@ -204,14 +291,13 @@ add_evidence_group(struct detail_section *section, const char *title, const char
      * missing digest is not mistaken for an empty or harmless file. */
     GtkWidget *heading;
 
-    if ((path == NULL || path[0] == '\0') && (md5 == NULL || md5[0] == '\0') &&
+    if (missing_path(path) && (md5 == NULL || md5[0] == '\0') &&
         (sha256 == NULL || sha256[0] == '\0') && status == MS_HASH_NOT_COLLECTED)
         return;
     heading = new_wrapping_label(title);
     add_class(heading, "memspy-evidence-role");
     gtk_grid_attach(GTK_GRID(section->grid), heading, 0, section->row++, 2, 1);
-    add_detail_field(section, "Path",
-                     path == NULL || path[0] == '\0' ? "Unavailable" : path, true);
+    add_detail_field(section, "Path", display_path(path), true);
     add_detail_field(section, "MD5", md5, true);
     add_detail_field(section, "SHA-256", sha256, true);
     add_detail_field(section, "Collection status", hash_status_text(status), false);
@@ -228,6 +314,7 @@ static void
 incident_details_toggled(GtkToggleButton *button, gpointer userdata)
 {
     GtkRevealer *details = userdata;
+    GtkWidget *summary = g_object_get_data(G_OBJECT(button), "memspy-summary");
     const bool expanded = gtk_toggle_button_get_active(button);
     const char *name = expanded ? "Hide incident details" : "View incident details";
 
@@ -235,6 +322,8 @@ incident_details_toggled(GtkToggleButton *button, gpointer userdata)
         expanded ? "pan-up-symbolic" : "pan-down-symbolic", GTK_ICON_SIZE_BUTTON));
     gtk_widget_set_tooltip_text(GTK_WIDGET(button), name);
     atk_object_set_name(gtk_widget_get_accessible(GTK_WIDGET(button)), name);
+    gtk_widget_set_no_show_all(summary, expanded);
+    gtk_widget_set_visible(summary, !expanded);
     gtk_revealer_set_reveal_child(details, expanded);
 }
 
@@ -250,6 +339,8 @@ update_filter_labels(struct ms_window *window)
 {
     size_t high = 0;
     size_t medium = 0;
+    size_t blocked = 0;
+    size_t detected = 0;
     char label[32];
 
     for (guint index = 0; index < window->alerts->len; ++index) {
@@ -258,6 +349,10 @@ update_filter_labels(struct ms_window *window)
             ++high;
         else
             ++medium;
+        if (view->alert.action == MS_ALERT_BLOCKED)
+            ++blocked;
+        else
+            ++detected;
     }
     snprintf(label, sizeof label, "All (%u)", window->alerts->len);
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[0]), label);
@@ -265,6 +360,12 @@ update_filter_labels(struct ms_window *window)
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[1]), label);
     snprintf(label, sizeof label, "Medium (%zu)", medium);
     gtk_button_set_label(GTK_BUTTON(window->filter_buttons[2]), label);
+    snprintf(label, sizeof label, "All outcomes (%u)", window->alerts->len);
+    gtk_button_set_label(GTK_BUTTON(window->outcome_buttons[0]), label);
+    snprintf(label, sizeof label, "Blocked (%zu)", blocked);
+    gtk_button_set_label(GTK_BUTTON(window->outcome_buttons[1]), label);
+    snprintf(label, sizeof label, "Detected (%zu)", detected);
+    gtk_button_set_label(GTK_BUTTON(window->outcome_buttons[2]), label);
 }
 
 static GtkWidget *
@@ -272,7 +373,10 @@ create_alert_row(struct alert_view *view)
 {
     const char *severity = view->alert.severity == MS_SEVERITY_HIGH ? "High" : "Medium";
     const bool blocked = view->alert.action == MS_ALERT_BLOCKED;
+    const bool exec_rule = is_exec_rule(view->alert.rule_id);
     const char *outcome = blocked ? "Blocked" : "Detected";
+    const char *executable_label = exec_rule ?
+        (blocked ? "Attempted executable" : "Executable") : "Actor executable";
     GtkWidget *row = gtk_list_box_row_new();
     GtkWidget *content = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
     GtkWidget *heading = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
@@ -320,6 +424,8 @@ create_alert_row(struct alert_view *view)
                  (unsigned int)view->alert.uid);
     else
         snprintf(user_text, sizeof user_text, "UID %u", (unsigned int)view->alert.uid);
+    if (view->alert.target_pid > 0)
+        snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
     timestamp = gtk_label_new(time_text);
     gtk_label_set_xalign(GTK_LABEL(timestamp), 1.0F);
     add_class(timestamp, "memspy-timestamp");
@@ -364,12 +470,17 @@ create_alert_row(struct alert_view *view)
     gtk_container_add(GTK_CONTAINER(summary), new_summary_item("User", user_text, false));
     gtk_container_add(GTK_CONTAINER(summary), new_summary_item("Process", process_text, true));
     gtk_container_add(GTK_CONTAINER(summary), new_summary_item(
-        blocked ? "Attempted executable" : "Executable",
-        view->alert.exe[0] == '\0' ? "Unavailable" : view->alert.exe, true));
-    if (view->alert.ppid > 0) {
+        executable_label, display_path(view->alert.exe), true));
+    if (view->alert.ppid > 0)
         snprintf(parent_pid, sizeof parent_pid, "%d", view->alert.ppid);
+    if (exec_rule && view->alert.ppid > 0) {
         gtk_container_add(GTK_CONTAINER(summary),
                           new_summary_item("Parent PID", parent_pid, true));
+    } else if (!exec_rule) {
+        if (view->alert.target_pid <= 0)
+            g_strlcpy(target_pid, "Unavailable", sizeof target_pid);
+        gtk_container_add(GTK_CONTAINER(summary),
+                          new_summary_item("Target PID", target_pid, true));
     }
     gtk_box_pack_start(GTK_BOX(content), summary, false, false, 0);
 
@@ -380,11 +491,14 @@ create_alert_row(struct alert_view *view)
         add_detail_field(&identity, "Parent PID", parent_pid, true);
     add_detail_field(&identity, "Parent executable", view->alert.parent_exe, true);
 
-    add_detail_field(&execution, blocked ? "Attempted executable" : "Executable",
-                     view->alert.exe[0] == '\0' ? "Unavailable" : view->alert.exe, true);
+    add_detail_field(&execution, executable_label, display_path(view->alert.exe), true);
     add_detail_field(&execution, "Command line", view->alert.cmdline, true);
-    if (blocked)
+    if (blocked && exec_rule)
         add_detail_field(&execution, "Launcher executable", view->alert.launcher_exe, true);
+    if (view->alert.target_pid > 0)
+        add_detail_field(&execution, "Target PID", target_pid, true);
+    else if (!exec_rule)
+        add_detail_field(&execution, "Target PID", "Unavailable", true);
     add_detail_field(&execution, "TTY", view->alert.tty, true);
 
     outcome_value = add_detail_field(&detection, "Outcome", outcome, false);
@@ -441,10 +555,6 @@ create_alert_row(struct alert_view *view)
                  (unsigned long long)view->alert.mount_namespace);
         add_detail_field(&evidence, "Namespaces", namespace_text, true);
     }
-    if (view->alert.target_pid > 0) {
-        snprintf(target_pid, sizeof target_pid, "%d", view->alert.target_pid);
-        add_detail_field(&evidence, "Target PID", target_pid, true);
-    }
     if (view->alert.target_namespace_pid > 0) {
         snprintf(target_namespace_pid, sizeof target_namespace_pid, "%d",
                  view->alert.target_namespace_pid);
@@ -476,6 +586,7 @@ create_alert_row(struct alert_view *view)
     gtk_revealer_set_transition_type(GTK_REVEALER(details_revealer),
                                      GTK_REVEALER_TRANSITION_TYPE_NONE);
     gtk_container_add(GTK_CONTAINER(details_revealer), details);
+    g_object_set_data(G_OBJECT(details_button), "memspy-summary", summary);
     g_signal_connect(details_button, "toggled", G_CALLBACK(incident_details_toggled),
                      details_revealer);
     g_signal_connect(hide_button, "clicked", G_CALLBACK(hide_incident_details),
@@ -541,22 +652,51 @@ static GtkWidget *
 create_filters(struct ms_window *window)
 {
     static const char *labels[] = {"All", "High", "Medium"};
-    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
-    GSList *group = NULL;
+    static const char *outcomes[] = {"All outcomes", "Blocked", "Detected"};
+    GtkWidget *box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 6);
+    GtkWidget *buttons = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
+    GtkWidget *severity = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GtkWidget *outcome = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 6);
+    GSList *severity_group = NULL;
+    GSList *outcome_group = NULL;
     for (unsigned int index = 0; index < 3; ++index) {
-        GtkWidget *button = gtk_radio_button_new_with_label(group, labels[index]);
-        group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
+        GtkWidget *button = gtk_radio_button_new_with_label(severity_group, labels[index]);
+        severity_group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
         g_object_set_data(G_OBJECT(button), "memspy-filter", GINT_TO_POINTER(index));
         g_signal_connect(button, "toggled", G_CALLBACK(filter_toggled), window);
         gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(button), false);
         add_class(button, "memspy-filter-button");
-        gtk_box_pack_start(GTK_BOX(box), button, false, false, 0);
+        gtk_box_pack_start(GTK_BOX(severity), button, false, false, 0);
         window->filter_buttons[index] = button;
+
+        button = gtk_radio_button_new_with_label(outcome_group, outcomes[index]);
+        outcome_group = gtk_radio_button_get_group(GTK_RADIO_BUTTON(button));
+        g_object_set_data(G_OBJECT(button), "memspy-outcome-filter", GINT_TO_POINTER(index));
+        g_signal_connect(button, "toggled", G_CALLBACK(outcome_toggled), window);
+        gtk_toggle_button_set_mode(GTK_TOGGLE_BUTTON(button), false);
+        add_class(button, "memspy-filter-button");
+        gtk_box_pack_start(GTK_BOX(outcome), button, false, false, 0);
+        window->outcome_buttons[index] = button;
     }
     gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(window->filter_buttons[0]), true);
+    gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(window->outcome_buttons[0]), true);
+    window->search_entry = gtk_search_entry_new();
+    gtk_entry_set_placeholder_text(GTK_ENTRY(window->search_entry), "Search alerts");
+    gtk_entry_set_max_length(GTK_ENTRY(window->search_entry), 256);
+    gtk_widget_set_halign(window->search_entry, GTK_ALIGN_START);
+    gtk_widget_set_size_request(window->search_entry, 280, -1);
+    add_class(window->search_entry, "memspy-alert-search");
+    atk_object_set_name(gtk_widget_get_accessible(window->search_entry),
+                        "Search alerts by process, PID, path or rule");
+    g_signal_connect(window->search_entry, "changed", G_CALLBACK(search_changed), window);
+    gtk_box_pack_start(GTK_BOX(box), window->search_entry, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(buttons), severity, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(buttons), outcome, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(box), buttons, false, false, 0);
     add_class(box, "memspy-filters");
     update_filter_labels(window);
-    atk_object_set_name(gtk_widget_get_accessible(box), "Alert severity filter");
+    atk_object_set_name(gtk_widget_get_accessible(severity), "Alert severity filter");
+    atk_object_set_name(gtk_widget_get_accessible(outcome), "Alert outcome filter");
     return box;
 }
 
@@ -579,6 +719,7 @@ ms_window_new(GtkApplication *application)
         gtk_application_window_new(application);
     window->alerts = g_ptr_array_new_with_free_func(g_free);
     window->filter = MS_UI_FILTER_ALL;
+    window->outcome_filter = OUTCOME_ALL;
     window->empty_box = gtk_box_new(GTK_ORIENTATION_VERTICAL, 8);
     window->empty_title = gtk_label_new("");
     window->empty_detail = gtk_label_new("");
@@ -841,9 +982,7 @@ ms_window_visible_count(const struct ms_window *window)
         return 0;
     for (guint index = 0; index < window->alerts->len; ++index) {
         const struct alert_view *view = g_ptr_array_index(window->alerts, index);
-        if (window->filter == MS_UI_FILTER_ALL ||
-            (window->filter == MS_UI_FILTER_HIGH && view->alert.severity == MS_SEVERITY_HIGH) ||
-            (window->filter == MS_UI_FILTER_MEDIUM && view->alert.severity == MS_SEVERITY_MEDIUM))
+        if (matches_alert(window, &view->alert))
             ++count;
     }
     return count;
@@ -858,6 +997,8 @@ ms_window_select_alert(struct ms_window *window, int64_t alert_id)
         const struct alert_view *view = g_ptr_array_index(window->alerts, index);
         if (view->alert.id == alert_id) {
             ms_window_set_filter(window, MS_UI_FILTER_ALL);
+            gtk_toggle_button_set_active(GTK_TOGGLE_BUTTON(window->outcome_buttons[0]), true);
+            gtk_entry_set_text(GTK_ENTRY(window->search_entry), "");
             gtk_list_box_select_row(GTK_LIST_BOX(window->list), GTK_LIST_BOX_ROW(view->row));
             gtk_widget_grab_focus(view->row);
             return true;
@@ -882,5 +1023,6 @@ ms_window_free(struct ms_window *window)
         return;
     gtk_widget_destroy(window->window);
     g_ptr_array_free(window->alerts, true);
+    g_free(window->search_query);
     g_free(window);
 }

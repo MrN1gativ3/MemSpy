@@ -321,12 +321,28 @@ handle_alerts(struct ms_session *session, json_object *request)
     }
     reply = json_object_new_object();
     items = json_object_new_array_ext((int)page.length);
-    for (size_t index = 0; index < page.length; ++index)
-        json_object_array_add(items, ms_alert_to_json(&page.items[index]));
     json_object_object_add(reply, "v", json_object_new_int(MS_PROTOCOL_VERSION));
     json_object_object_add(reply, "ok", json_object_new_boolean(true));
     json_object_object_add(reply, "alerts", items);
     json_object_object_add(reply, "next_before_id", json_object_new_int64(page.next_before_id));
+    for (size_t index = 0; index < page.length; ++index) {
+        json_object_array_add(items, ms_alert_to_json(&page.items[index]));
+        json_object_object_add(reply, "next_before_id",
+                               json_object_new_int64(page.items[index].id));
+        if (strlen(json_object_to_json_string_ext(reply, JSON_C_TO_STRING_PLAIN)) + 1U >
+            MS_MAX_MESSAGE_BYTES) {
+            json_object_array_del_idx(items, index, 1);
+            if (index == 0) {
+                send_error(session->descriptor, "oversized_alert");
+                json_object_put(reply);
+                ms_alert_page_clear(&page);
+                return;
+            }
+            json_object_object_add(reply, "next_before_id",
+                                   json_object_new_int64(page.items[index - 1].id));
+            break;
+        }
+    }
     session_send_json(session, reply);
     json_object_put(reply);
     ms_alert_page_clear(&page);

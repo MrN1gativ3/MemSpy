@@ -490,6 +490,85 @@ test_injection_alert_shows_actor_and_target_evidence(void)
 }
 
 static void
+test_search_and_outcome_filters(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert blocked = fixture_alert(21, MS_SEVERITY_HIGH, "writer --target 777");
+    struct ms_alert detected = fixture_alert(22, MS_SEVERITY_MEDIUM, "loader --payload");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *search;
+
+    blocked.action = MS_ALERT_BLOCKED;
+    blocked.target_pid = 777;
+    g_strlcpy(blocked.rule_id, "BLOCKED_PROC_MEM_WRITE", sizeof blocked.rule_id);
+    g_strlcpy(blocked.comm, "writer", sizeof blocked.comm);
+    g_strlcpy(blocked.exe, "/usr/bin/writer", sizeof blocked.exe);
+    detected.action = MS_ALERT_DETECTED;
+    g_strlcpy(detected.comm, "loader", sizeof detected.comm);
+    g_assert_true(ms_window_add_alert(window, &blocked));
+    g_assert_true(ms_window_add_alert(window, &detected));
+    search = find_style_class(widget, "memspy-alert-search");
+    g_assert_true(GTK_IS_SEARCH_ENTRY(search));
+    g_assert_true(has_button_label(widget, "Blocked (1)"));
+    g_assert_true(has_button_label(widget, "Detected (1)"));
+
+    gtk_entry_set_text(GTK_ENTRY(search), "proc_mem");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    gtk_entry_set_text(GTK_ENTRY(search), "WRITER");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    gtk_entry_set_text(GTK_ENTRY(search), "/usr/bin/writer");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    gtk_entry_set_text(GTK_ENTRY(search), "777");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    gtk_entry_set_text(GTK_ENTRY(search), "no such incident");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 0);
+    g_assert_true(has_label_text(widget, "No matching alerts"));
+    gtk_entry_set_text(GTK_ENTRY(search), "");
+
+    gtk_button_clicked(GTK_BUTTON(find_button_label(widget, "Blocked (1)")));
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    gtk_button_clicked(GTK_BUTTON(find_button_label(widget, "Detected (1)")));
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 1);
+    ms_window_set_filter(window, MS_UI_FILTER_HIGH);
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 0);
+    gtk_entry_set_text(GTK_ENTRY(search), "missing");
+    g_assert_true(ms_window_select_alert(window, 22));
+    g_assert_cmpstr(gtk_entry_get_text(GTK_ENTRY(search)), ==, "");
+    g_assert_cmpuint(ms_window_visible_count(window), ==, 2);
+    ms_window_free(window);
+}
+
+static void
+test_blocked_memory_write_card_uses_actor_and_target(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert alert = fixture_alert(23, MS_SEVERITY_HIGH, "writer --target 777");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *summary;
+    GtkWidget *expand;
+
+    alert.action = MS_ALERT_BLOCKED;
+    alert.target_pid = 777;
+    g_strlcpy(alert.rule_id, "BLOCKED_PROC_MEM_WRITE", sizeof alert.rule_id);
+    g_strlcpy(alert.exe, "?", sizeof alert.exe);
+    g_assert_true(ms_window_add_alert(window, &alert));
+    g_assert_true(has_label_text(widget, "Actor executable"));
+    g_assert_true(has_label_text(widget, "Target PID"));
+    g_assert_true(has_label_text(widget, "777"));
+    g_assert_true(has_label_text(widget, "Unavailable"));
+    g_assert_false(has_label_text(widget, "Attempted executable"));
+    g_assert_false(has_label_text(widget, "?"));
+    summary = find_style_class(widget, "memspy-incident-summary");
+    expand = find_style_class(widget, "memspy-expand-button");
+    g_assert_true(gtk_widget_get_visible(summary));
+    gtk_button_clicked(GTK_BUTTON(expand));
+    g_assert_false(gtk_widget_get_visible(summary));
+    gtk_button_clicked(GTK_BUTTON(expand));
+    g_assert_true(gtk_widget_get_visible(summary));
+    ms_window_free(window);
+}
+
+static void
 test_alert_missing_and_long_fields(void)
 {
     struct ms_window *window = ms_window_new(NULL);
@@ -610,5 +689,7 @@ main(int argc, char **argv)
                     test_alert_missing_and_long_fields);
     g_test_add_func("/ui/injection-actor-target-evidence",
                     test_injection_alert_shows_actor_and_target_evidence);
+    g_test_add_func("/ui/search-and-outcome-filters", test_search_and_outcome_filters);
+    g_test_add_func("/ui/blocked-memory-write-card", test_blocked_memory_write_card_uses_actor_and_target);
     return g_test_run();
 }

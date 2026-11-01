@@ -198,6 +198,47 @@ test_api_handshake_status_and_history(struct api_fixture *fixture, gconstpointer
 }
 
 static void
+test_api_paginates_large_history(struct api_fixture *fixture, gconstpointer user_data)
+{
+    struct ms_alert alert = sample_alert(MS_SEVERITY_HIGH, "MEMFD_EXEC");
+    struct ms_client *client = NULL;
+    struct ms_error error = {0};
+    int64_t before_id = 0;
+    size_t count = 0;
+    size_t pages = 0;
+    int pair[2];
+
+    (void)user_data;
+    memset(alert.cmdline, 'a', 1024);
+    alert.cmdline[1024] = '\0';
+    for (size_t index = 0; index < 105; ++index)
+        g_assert_true(ms_store_insert(fixture->store, &alert, &error));
+
+    g_assert_cmpint(socketpair(AF_UNIX, SOCK_STREAM, 0, pair), ==, 0);
+    g_assert_true(ms_api_accept_fd(fixture->api, pair[0]));
+    g_assert_true(ms_client_connect_fd(pair[1], &client, &error));
+    do {
+        struct ms_alert_page page = {0};
+        g_assert_true(ms_client_list_alerts(client, before_id, MS_SEVERITY_MEDIUM,
+                                            200, &page, &error));
+        ++pages;
+        for (size_t index = 0; index < page.length; ++index) {
+            if (before_id != 0)
+                g_assert_cmpint(page.items[index].id, <, before_id);
+            ++count;
+        }
+        before_id = page.next_before_id;
+        bool finished = page.length == 0;
+        ms_alert_page_clear(&page);
+        if (finished)
+            break;
+    } while (count <= 105);
+    g_assert_cmpuint(count, ==, 105);
+    g_assert_cmpuint(pages, >, 2);
+    ms_client_close(client);
+}
+
+static void
 test_api_response_control(struct api_fixture *fixture, gconstpointer user_data)
 {
     static const char *const errors[] = {
@@ -618,6 +659,8 @@ main(int argc, char **argv)
     g_test_init(&argc, &argv, NULL);
     g_test_add("/api/handshake-status-history", struct api_fixture, NULL, fixture_setup,
                test_api_handshake_status_and_history, fixture_teardown);
+    g_test_add("/api/paginate-large-history", struct api_fixture, NULL, fixture_setup,
+               test_api_paginates_large_history, fixture_teardown);
     g_test_add("/api/hostile-clients", struct api_fixture, NULL, fixture_setup,
                test_api_rejects_hostile_clients, fixture_teardown);
     g_test_add("/api/subscription", struct api_fixture, NULL, fixture_setup,

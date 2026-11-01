@@ -131,7 +131,11 @@ memspy_ui = executable(
   install: true,
   install_dir: memspy_bindir,
 )
-install_symlink('memspy-ui', pointing_to: memspy_bindir / 'memspy-ui',
+install_data('packaging/common/memspy-ui-launch.sh',
+             install_dir: memspy_libexecdir,
+             rename: 'memspy-ui-launch',
+             install_mode: 'rwxr-xr-x')
+install_symlink('memspy-ui', pointing_to: memspy_libexecdir / 'memspy-ui-launch',
                 install_dir: '/usr/local/bin')
 endif
 

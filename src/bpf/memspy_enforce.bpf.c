@@ -372,11 +372,11 @@ int BPF_PROG(block_suspicious_exec, struct linux_binprm *bprm, int prior_result)
             return -MS_EACCES;
         clear_event(event);
         event->abi_version = MS_ENFORCE_EVENT_ABI;
-        event->kind = kind;
         event->pid = process >> 32;
         event->uid = uid_gid;
         bpf_get_current_comm(event->comm, sizeof(event->comm));
     }
+    event->kind = kind;
     event->result = -MS_EACCES;
     event->observed_boottime_ns = bpf_ktime_get_ns();
     event->launcher = launcher;

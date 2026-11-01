@@ -39,6 +39,7 @@ rm -f -- \
     /opt/memspy/libexec/memspy/memspy.bpf.o \
     /opt/memspy/libexec/memspy/memspy_enforce.bpf.o \
     /opt/memspy/libexec/memspy/cleanup-bpf \
+    /opt/memspy/libexec/memspy/memspy-ui-launch \
     /opt/memspy/share/memspy/memspy-ui.css \
     /etc/systemd/system/memspyd.service \
     /usr/bin/memspyd \

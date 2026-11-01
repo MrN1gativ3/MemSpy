@@ -1,5 +1,6 @@
 #define _GNU_SOURCE
 #include <fcntl.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/syscall.h>
@@ -39,5 +40,6 @@ main(int argc, char **argv)
         return 1;
     setenv("MEMSPY_FIXTURE_CHILD", "1", 1);
     syscall(SYS_execveat, target, "", argv, environ, AT_EMPTY_PATH);
+    perror("deleted_exec: execveat");
     return 1;
 }

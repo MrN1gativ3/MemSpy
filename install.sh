@@ -108,6 +108,7 @@ fi
 
 if [ "$desktop_environment" != headless ]; then
     test -n "$desktop_user" || fail "pass the unprivileged desktop username"
+    command -v sg >/dev/null 2>&1 || fail "the sg command is required for desktop group access"
 fi
 if [ "$desktop_environment" = headless ] && [ "$reader_supplied" = false ]; then
     desktop_user=

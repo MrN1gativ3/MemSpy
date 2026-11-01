@@ -116,6 +116,15 @@ ASAN_OPTIONS=detect_leaks=0 \
   meson test -C build --no-suite privileged --print-errorlogs
 ```
 
+To check the installed detector on a desktop, run the benign fixtures as your
+normal user. This runs 20 memory-backed executions, checks each alert by PID,
+and reports lost events and blocked executions. It leaves Response mode as set.
+
+```sh
+meson compile -C build tests/memfd_exec tests/ordinary_exec
+python3 tools/memspy_desktop_smoke.py build
+```
+
 ## Important paths
 
 | Path | Purpose |

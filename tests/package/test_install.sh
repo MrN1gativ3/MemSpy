@@ -6,6 +6,11 @@ profile=${2:-desktop}
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 
+if [ "$profile" = desktop ]; then
+    mkdir -p "$stage/usr/local/bin"
+    ln -s /opt/memspy/bin/memspy-ui "$stage/usr/local/bin/memspy-ui"
+fi
+
 DESTDIR="$stage" meson install -C "$build_dir" >/dev/null
 
 for path in \
@@ -35,6 +40,7 @@ test ! -e "$stage/opt/memspy/libexec/memspy/migrate-legacy" || {
 
 if [ "$profile" = desktop ]; then
     for path in opt/memspy/bin/memspy-ui \
+        opt/memspy/libexec/memspy/memspy-ui-launch \
         opt/memspy/share/memspy/memspy-ui.css \
         usr/share/applications/org.memspy.MemSpyUI.desktop \
         etc/xdg/autostart/org.memspy.MemSpyUI.desktop usr/share/man/man1/memspy-ui.1; do
@@ -42,6 +48,7 @@ if [ "$profile" = desktop ]; then
     done
 else
     for path in opt/memspy/bin/memspy-ui \
+        opt/memspy/libexec/memspy/memspy-ui-launch \
         opt/memspy/share/memspy/memspy-ui.css \
         usr/share/applications/org.memspy.MemSpyUI.desktop \
         etc/xdg/autostart/org.memspy.MemSpyUI.desktop usr/share/man/man1/memspy-ui.1; do
@@ -70,11 +77,13 @@ grep -q '^d /sys/fs/bpf/memspy 0700 root root -$' "$stage/usr/lib/tmpfiles.d/mem
 grep -q '^g memspy-ui ' "$stage/usr/lib/sysusers.d/memspyd.conf"
 if [ "$profile" = desktop ]; then
     test -L "$stage/usr/local/bin/memspy-ui"
-    test "$(readlink "$stage/usr/local/bin/memspy-ui")" = /opt/memspy/bin/memspy-ui
+    test "$(readlink "$stage/usr/local/bin/memspy-ui")" = \
+        /opt/memspy/libexec/memspy/memspy-ui-launch
+    test -x "$stage/opt/memspy/libexec/memspy/memspy-ui-launch"
     grep -q '^OnlyShowIn=GNOME;KDE;' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
     grep -q '^OnlyShowIn=GNOME;KDE;' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
-    grep -q '^Exec=/opt/memspy/bin/memspy-ui$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
-    grep -q '^Exec=/opt/memspy/bin/memspy-ui --background$' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
+    grep -q '^Exec=/usr/local/bin/memspy-ui$' "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
+    grep -q '^Exec=/usr/local/bin/memspy-ui --background$' "$stage/etc/xdg/autostart/org.memspy.MemSpyUI.desktop"
     grep -q '^Icon=/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg$' \
         "$stage/usr/share/applications/org.memspy.MemSpyUI.desktop"
 fi

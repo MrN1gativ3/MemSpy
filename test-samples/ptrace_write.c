@@ -1,5 +1,6 @@
 #define _POSIX_C_SOURCE 200809L
 #include <signal.h>
+#include <stdio.h>
 #include <stdint.h>
 #include <sys/ptrace.h>
 #include <sys/wait.h>
@@ -13,7 +14,7 @@ main(void)
      * that the write took effect. */
     int pipefd[2];
     pid_t child;
-    int status;
+    int status = 0;
     uintptr_t remote_address;
 
     if (pipe(pipefd) != 0)
@@ -26,8 +27,10 @@ main(void)
         close(pipefd[0]);
         if (write(pipefd[1], &address, sizeof address) != sizeof address)
             _exit(1);
-        if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) != 0)
+        if (ptrace(PTRACE_TRACEME, 0, NULL, NULL) != 0) {
+            perror("ptrace_write: PTRACE_TRACEME");
             _exit(1);
+        }
         raise(SIGSTOP);
         _exit(target == 42 ? 0 : 1);
     }
@@ -42,9 +45,12 @@ main(void)
         return 1;
     }
     close(pipefd[0]);
-    if (waitpid(child, &status, 0) < 0 || !WIFSTOPPED(status))
+    if (waitpid(child, &status, 0) < 0 || !WIFSTOPPED(status)) {
+        fprintf(stderr, "ptrace_write: child did not stop for tracing (status=%d)\n", status);
         return 1;
+    }
     if (ptrace(PTRACE_POKEDATA, child, (void *)remote_address, (void *)42L) != 0) {
+        perror("ptrace_write: PTRACE_POKEDATA");
         ptrace(PTRACE_DETACH, child, NULL, NULL);
         kill(child, SIGKILL);
         waitpid(child, NULL, 0);

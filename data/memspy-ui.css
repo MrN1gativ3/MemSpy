@@ -144,6 +144,15 @@
   color: #FFFFFF;
 }
 
+.memspy-alert-search {
+  color: #F2F3F5;
+  background-color: #292D37;
+  border: 1px solid #454A58;
+  border-radius: 6px;
+}
+
+.memspy-alert-search:focus { border-color: #8B6FC0; }
+
 .memspy-alert-row {
   margin-bottom: 8px;
   padding: 12px;

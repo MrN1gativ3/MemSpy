@@ -208,6 +208,9 @@ test('build-portability', find_program('sh'),
 test('lab-runner', find_program('python3'),
      args: [meson.project_source_root() / 'tests/package/test_lab_runner.py'])
 
+test('desktop-smoke-logic', find_program('python3'),
+     args: [meson.project_source_root() / 'tests/package/test_desktop_smoke.py'])
+
 if desktop_enabled
 ui_state_test = executable(
   'test-ui-state',
