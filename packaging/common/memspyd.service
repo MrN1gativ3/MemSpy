@@ -1,5 +1,5 @@
 [Unit]
-Description=MemSpy fileless malware detection service
+Description=MemSpy fileless execution and injection detection service
 Documentation=man:memspyd(8)
 After=local-fs.target
 ConditionPathExists=/sys/kernel/btf/vmlinux

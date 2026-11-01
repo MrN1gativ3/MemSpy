@@ -620,7 +620,7 @@ test_window_states_filters_and_accessibility(void)
     AtkObject *accessible = gtk_widget_get_accessible(GTK_WIDGET(ms_window_widget(window)));
     GtkWidget *titlebar = gtk_window_get_titlebar(ms_window_widget(window));
 
-    g_assert_cmpstr(atk_object_get_name(accessible), ==, "Fileless malware alerts");
+    g_assert_cmpstr(atk_object_get_name(accessible), ==, "Fileless execution and injection alerts");
     g_assert_cmpstr(gtk_header_bar_get_subtitle(GTK_HEADER_BAR(titlebar)), ==,
                     "Fileless activity monitor");
     g_assert_true(has_button_label(GTK_WIDGET(ms_window_widget(window)), "All (0)"));

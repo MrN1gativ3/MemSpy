@@ -730,7 +730,7 @@ ms_window_new(GtkApplication *application)
     gtk_header_bar_set_title(GTK_HEADER_BAR(header), "MemSpy");
     gtk_header_bar_set_subtitle(GTK_HEADER_BAR(header), "Fileless activity monitor");
     gtk_header_bar_set_show_close_button(GTK_HEADER_BAR(header), true);
-    atk_object_set_name(gtk_widget_get_accessible(window->window), "Fileless malware alerts");
+    atk_object_set_name(gtk_widget_get_accessible(window->window), "Fileless execution and injection alerts");
     add_class(window->window, "memspy-window");
 
     window->status_box = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 12);

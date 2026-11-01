@@ -1,7 +1,7 @@
 [Desktop Entry]
 Type=Application
 Name=MemSpy Indicator
-Comment=Show local fileless malware alerts in the desktop panel
+Comment=Show fileless execution and injection alerts in the desktop panel
 Exec=/usr/local/bin/memspy-ui --background
 Icon=org.memspy.MemSpyUI
 Terminal=false

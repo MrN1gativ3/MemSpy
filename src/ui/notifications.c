@@ -39,7 +39,7 @@ ms_notifications_show(const struct ms_alert *alert,
     if (alert == NULL || alert->severity != MS_SEVERITY_HIGH || open_alert == NULL)
         return false;
     snprintf(body, sizeof body, "%s\n%s", alert->rule_id, alert->explanation);
-    notification = notify_notification_new("High-severity fileless malware alert",
+    notification = notify_notification_new("High-severity MemSpy alert",
                                            body, "memspy-high");
     notify_notification_set_urgency(notification, NOTIFY_URGENCY_CRITICAL);
     context = g_new0(struct notification_action, 1);
