@@ -43,8 +43,8 @@ jobs:
       - name: Release install contract
         run: |
           meson setup build-package --prefix=/opt/memspy --buildtype=release -Dintegration_tests=false -Ddesktop_ui=enabled
-          meson compile -C build-package -j 1
-          sh -x tests/package/test_install.sh build-package desktop
+          meson compile -C build-package
+          sh tests/package/test_install.sh build-package desktop
       - name: Headless build and install contract
         run: |
           meson setup build-headless --prefix=/opt/memspy --buildtype=release -Dintegration_tests=false -Ddesktop_ui=disabled

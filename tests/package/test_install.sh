@@ -6,11 +6,6 @@ profile=${2:-desktop}
 stage=$(mktemp -d)
 trap 'rm -rf "$stage"' EXIT
 
-if [ "$profile" = desktop ]; then
-    mkdir -p "$stage/usr/local/bin"
-    ln -s /opt/memspy/bin/memspy-ui "$stage/usr/local/bin/memspy-ui"
-fi
-
 DESTDIR="$stage" meson install -C "$build_dir" >/dev/null
 
 for path in \

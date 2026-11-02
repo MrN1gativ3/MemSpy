@@ -239,6 +239,11 @@ fi
 meson compile -C "$build_dir"
 meson test -C "$build_dir" --no-suite privileged --print-errorlogs
 meson install -C "$build_dir"
+# Meson 1.3 leaves the symlink created by older MemSpy installs in place.
+if [ "$desktop_environment" != headless ] &&
+   [ "$(readlink /usr/local/bin/memspy-ui 2>/dev/null || true)" = /opt/memspy/bin/memspy-ui ]; then
+    ln -sfn /opt/memspy/libexec/memspy/memspy-ui-launch /usr/local/bin/memspy-ui
+fi
 
 if [ "$desktop_environment" != headless ]; then
     icon=/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg
