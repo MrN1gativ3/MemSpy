@@ -181,9 +181,8 @@ test('daemon-integration', find_program('sh'),
      args: [meson.current_source_dir() / 'integration/test_daemon.sh', memspyd])
 
 test('installer', find_program('sh'),
-     args: [meson.current_source_dir() / 'package/test_ubuntu_installer.sh',
-            meson.project_source_root() / 'install.sh',
-            meson.project_source_root() / 'packaging/ubuntu/install-test-vm.sh'])
+     args: [meson.current_source_dir() / 'package/test_installer.sh',
+            meson.project_source_root() / 'install.sh'])
 
 test('uninstall-state', find_program('sh'),
      args: [meson.current_source_dir() / 'package/test_uninstall_state.sh',
