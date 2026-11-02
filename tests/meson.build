@@ -227,8 +227,9 @@ ui_test = executable(
   '../src/ui/indicator.c',
   '../src/ui/window.c',
   '../src/ui/state.c',
+  '../src/common/alert_json.c',
   include_directories: [inc, include_directories('../src/ui')],
-  dependencies: [glib_dep, gtk_dep, appindicator_dep],
+  dependencies: [glib_dep, gtk_dep, appindicator_dep, json_c_dep],
 )
 
 test('ui', ui_test)

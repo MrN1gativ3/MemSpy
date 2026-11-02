@@ -335,6 +335,22 @@ hide_incident_details(GtkButton *button, gpointer userdata)
 }
 
 static void
+copy_incident_json(GtkButton *button, gpointer userdata)
+{
+    const struct alert_view *view = userdata;
+    json_object *json = ms_alert_to_json(&view->alert);
+
+    if (json == NULL) {
+        gtk_button_set_label(button, "Copy unavailable");
+        return;
+    }
+    gtk_clipboard_set_text(gtk_clipboard_get(GDK_SELECTION_CLIPBOARD),
+                           json_object_to_json_string_ext(json, JSON_C_TO_STRING_PLAIN), -1);
+    json_object_put(json);
+    gtk_button_set_label(button, "Copied JSON");
+}
+
+static void
 update_filter_labels(struct ms_window *window)
 {
     size_t high = 0;
@@ -394,7 +410,9 @@ create_alert_row(struct alert_view *view)
     GtkWidget *details_button = gtk_toggle_button_new();
     GtkWidget *details = gtk_box_new(GTK_ORIENTATION_VERTICAL, 10);
     GtkWidget *details_grid = gtk_flow_box_new();
+    GtkWidget *details_actions = gtk_box_new(GTK_ORIENTATION_HORIZONTAL, 8);
     GtkWidget *hide_button = gtk_button_new_with_label("Hide incident details ↑");
+    GtkWidget *copy_button = gtk_button_new_with_label("Copy JSON");
     GtkWidget *details_revealer = gtk_revealer_new();
     struct detail_section identity = new_detail_section("Identity");
     struct detail_section execution = new_detail_section("Execution");
@@ -580,9 +598,13 @@ create_alert_row(struct alert_view *view)
     gtk_container_add(GTK_CONTAINER(details_grid), detection.container);
     gtk_container_add(GTK_CONTAINER(details_grid), evidence.container);
     add_class(hide_button, "memspy-details-toggle");
+    add_class(copy_button, "memspy-details-toggle");
+    atk_object_set_name(gtk_widget_get_accessible(copy_button), "Copy incident JSON");
     add_class(details_revealer, "memspy-incident-details");
     gtk_box_pack_start(GTK_BOX(details), details_grid, false, false, 0);
-    gtk_box_pack_start(GTK_BOX(details), hide_button, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details_actions), copy_button, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details_actions), hide_button, false, false, 0);
+    gtk_box_pack_start(GTK_BOX(details), details_actions, false, false, 0);
     gtk_revealer_set_transition_type(GTK_REVEALER(details_revealer),
                                      GTK_REVEALER_TRANSITION_TYPE_NONE);
     gtk_container_add(GTK_CONTAINER(details_revealer), details);
@@ -591,6 +613,7 @@ create_alert_row(struct alert_view *view)
                      details_revealer);
     g_signal_connect(hide_button, "clicked", G_CALLBACK(hide_incident_details),
                      details_button);
+    g_signal_connect(copy_button, "clicked", G_CALLBACK(copy_incident_json), view);
     gtk_box_pack_start(GTK_BOX(content), details_revealer, false, false, 0);
     gtk_container_add(GTK_CONTAINER(row), content);
     add_class(row, "memspy-alert-row");

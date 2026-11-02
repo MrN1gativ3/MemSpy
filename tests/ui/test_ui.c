@@ -490,6 +490,41 @@ test_injection_alert_shows_actor_and_target_evidence(void)
 }
 
 static void
+test_copy_incident_json(void)
+{
+    struct ms_window *window = ms_window_new(NULL);
+    struct ms_alert alert = fixture_alert(73, MS_SEVERITY_HIGH, "loader --payload example");
+    GtkWidget *widget = GTK_WIDGET(ms_window_widget(window));
+    GtkWidget *expand;
+    GtkWidget *copy;
+    GtkClipboard *clipboard = gtk_clipboard_get(GDK_SELECTION_CLIPBOARD);
+    char *text;
+    json_object *json;
+    json_object *field;
+
+    g_assert_true(ms_window_add_alert(window, &alert));
+    expand = find_style_class(widget, "memspy-expand-button");
+    g_assert_nonnull(expand);
+    gtk_button_clicked(GTK_BUTTON(expand));
+    copy = find_button_label(widget, "Copy JSON");
+    g_assert_nonnull(copy);
+    gtk_button_clicked(GTK_BUTTON(copy));
+    text = gtk_clipboard_wait_for_text(clipboard);
+    g_assert_nonnull(text);
+    json = json_tokener_parse(text);
+    g_assert_nonnull(json);
+    g_assert_true(json_object_object_get_ex(json, "id", &field));
+    g_assert_cmpint(json_object_get_int64(field), ==, 73);
+    g_assert_true(json_object_object_get_ex(json, "rule_id", &field));
+    g_assert_cmpstr(json_object_get_string(field), ==, "MEMFD_EXEC");
+    g_assert_true(json_object_object_get_ex(json, "cmdline", &field));
+    g_assert_cmpstr(json_object_get_string(field), ==, "loader --payload example");
+    json_object_put(json);
+    g_free(text);
+    ms_window_free(window);
+}
+
+static void
 test_search_and_outcome_filters(void)
 {
     struct ms_window *window = ms_window_new(NULL);
@@ -691,5 +726,6 @@ main(int argc, char **argv)
                     test_injection_alert_shows_actor_and_target_evidence);
     g_test_add_func("/ui/search-and-outcome-filters", test_search_and_outcome_filters);
     g_test_add_func("/ui/blocked-memory-write-card", test_blocked_memory_write_card_uses_actor_and_target);
+    g_test_add_func("/ui/copy-incident-json", test_copy_incident_json);
     return g_test_run();
 }
