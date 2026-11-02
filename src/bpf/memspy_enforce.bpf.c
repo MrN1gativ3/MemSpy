@@ -239,7 +239,7 @@ emit_simple_denial(void *context, enum ms_enforce_event_kind kind,
     event->target_pid = target_pid;
     event->uid = (__u32)bpf_get_current_uid_gid();
     event->result = -MS_EACCES;
-    event->observed_boottime_ns = bpf_ktime_get_ns();
+    event->observed_boottime_ns = bpf_ktime_get_boot_ns();
     event->launcher = launcher;
     event->filename[0] = '?';
     event->filename_length = 1;
@@ -378,7 +378,7 @@ int BPF_PROG(block_suspicious_exec, struct linux_binprm *bprm, int prior_result)
     }
     event->kind = kind;
     event->result = -MS_EACCES;
-    event->observed_boottime_ns = bpf_ktime_get_ns();
+    event->observed_boottime_ns = bpf_ktime_get_boot_ns();
     event->launcher = launcher;
     parent = BPF_CORE_READ(task, real_parent);
     if (parent != NULL)

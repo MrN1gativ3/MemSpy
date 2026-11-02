@@ -56,7 +56,7 @@ emit(void *context, const struct pending_call *call, long result)
         .uid = uid_gid,
         .target_pid = call->target_pid,
         .result = result,
-        .observed_boottime_ns = bpf_ktime_get_ns(),
+        .observed_boottime_ns = bpf_ktime_get_boot_ns(),
         .aux = call->aux,
     };
 
