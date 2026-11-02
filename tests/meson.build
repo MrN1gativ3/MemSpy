@@ -209,6 +209,8 @@ test('lab-runner', find_program('python3'),
 
 test('desktop-smoke-logic', find_program('python3'),
      args: [meson.project_source_root() / 'tests/package/test_desktop_smoke.py'])
+test('manual-fixture-logic', find_program('python3'),
+     args: [meson.project_source_root() / 'tests/package/test_manual_test.py'])
 
 if desktop_enabled
 ui_state_test = executable(
@@ -239,7 +241,7 @@ test('ui-activation', find_program('sh'),
      timeout: 30)
 endif
 
-foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'ordinary_exec', 'ordinary_write']
+foreach fixture : ['memfd_exec', 'deleted_exec', 'process_vm_write', 'ptrace_write', 'proc_mem_write', 'injection_chain', 'ordinary_exec', 'ordinary_write']
   executable(fixture, '../test-samples/' + fixture + '.c', install: false)
 endforeach
 

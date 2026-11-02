@@ -17,6 +17,16 @@ MemSpy is a focused host monitor, not a full EDR or antivirus product. Test Resp
 
 Detection remains active when Response mode is off or unsupported. Response mode is optional, off by default, and uses BPF LSM to deny supported suspicious operations before they complete.
 
+## Architecture
+
+```text
+Linux tracepoints → eBPF sensor → memspyd policy → SQLite alert history
+                                      └→ local Unix socket → memspyctl / GTK UI
+Response mode: BPF LSM → deny supported operations → memspyd blocked alerts
+```
+
+`memspyd` owns detection, alert storage, and the local API. The CLI and GTK UI read the same alerts through that API. Response mode adds kernel enforcement; the UI switch shows the confirmed daemon state.
+
 ## Requirements
 
 - x86_64 Linux
@@ -74,6 +84,10 @@ memspyctl response off
 
 For automation, put `--json` before the command, for example `memspyctl --json status` or `memspyctl --json alerts --limit 20`. MemSpy exposes no network listener; the CLI and GTK application use the local Unix socket at `/run/memspy/memspy.sock`.
 
+## Desktop UI
+
+Run `memspy-ui` after logging in again. Filter alerts by severity or outcome, search by process or rule, and expand an incident for paths, command line, hashes, and a **Copy JSON** action. The Response switch asks for administrator authorization and shows blocking as on only after the daemon confirms it.
+
 Expanded incidents show the applicable actor, executed image, target, launcher, and parent paths. MemSpy records MD5 for IOC compatibility, SHA-256 as the primary hash, and an exact reason when an image cannot be hashed. Images larger than 128 MiB are not hashed.
 
 ## Response allowlist
@@ -123,6 +137,13 @@ and reports lost events and blocked executions. It leaves Response mode as set.
 ```sh
 meson compile -C build tests/memfd_exec tests/ordinary_exec
 python3 tools/memspy_desktop_smoke.py build
+```
+
+To manually check every benign fixture, run this once with Response mode off
+and again with it on. The script uses the current mode and leaves it unchanged.
+
+```sh
+python3 tools/memspy_manual_test.py build
 ```
 
 ## Important paths
