@@ -32,7 +32,7 @@ Response mode: BPF LSM → deny supported operations → memspyd blocked alerts
 - x86_64 Linux
 - Linux kernel 5.4 or newer
 - systemd and readable BTF at `/sys/kernel/btf/vmlinux`
-- Ubuntu/Debian, Fedora, or Arch Linux
+- Fedora or Ubuntu
 - Optional desktop UI: GNOME or KDE Plasma
 
 ## Install
