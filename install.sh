@@ -246,8 +246,9 @@ if [ "$desktop_environment" != headless ] &&
 fi
 
 if [ "$desktop_environment" != headless ]; then
-    icon=/usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg
+    icon=/usr/share/icons/hicolor/512x512/apps/org.memspy.MemSpyUI.png
     test -r "$icon" || fail "the desktop icon was not installed at $icon"
+    rm -f /usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg
     if command -v gtk-update-icon-cache >/dev/null 2>&1; then
         gtk-update-icon-cache -f -q /usr/share/icons/hicolor || \
             echo "MemSpy installer: could not refresh the icon cache" >&2

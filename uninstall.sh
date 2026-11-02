@@ -55,6 +55,7 @@ rm -f -- \
     /usr/share/applications/org.memspy.MemSpyUI.desktop \
     /etc/xdg/autostart/org.memspy.MemSpyUI.desktop \
     /usr/share/memspy/memspy-ui.css \
+    /usr/share/icons/hicolor/512x512/apps/org.memspy.MemSpyUI.png \
     /usr/share/icons/hicolor/scalable/apps/org.memspy.MemSpyUI.svg \
     /usr/share/icons/hicolor/scalable/status/memspy-healthy.svg \
     /usr/share/icons/hicolor/scalable/status/memspy-medium.svg \
