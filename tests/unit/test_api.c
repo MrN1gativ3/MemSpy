@@ -235,6 +235,13 @@ test_api_paginates_large_history(struct api_fixture *fixture, gconstpointer user
     } while (count <= 105);
     g_assert_cmpuint(count, ==, 105);
     g_assert_cmpuint(pages, >, 2);
+    struct ms_alert_page complete = {0};
+    g_assert_true(ms_client_list_alerts_complete(client, MS_SEVERITY_MEDIUM, 100,
+                                                  &complete, &error));
+    g_assert_cmpuint(complete.length, ==, 100);
+    for (size_t index = 0; index < complete.length; ++index)
+        g_assert_cmpint(complete.items[index].id, ==, 105 - (int64_t)index);
+    ms_alert_page_clear(&complete);
     ms_client_close(client);
 }
 

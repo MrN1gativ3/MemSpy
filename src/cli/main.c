@@ -89,7 +89,7 @@ int main(int argc, char **argv)
                 goto done;
             }
         }
-        if (!ms_client_list_alerts(client, 0, minimum, limit, &page, &error))
+        if (!ms_client_list_alerts_complete(client, minimum, limit, &page, &error))
             result = client_error(&error);
         else if (!ms_cli_print_alerts(stdout, &page, json))
             result = 3;

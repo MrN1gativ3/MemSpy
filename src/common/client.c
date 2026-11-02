@@ -358,6 +358,52 @@ ms_client_list_alerts(struct ms_client *client, int64_t before_id, enum ms_sever
 }
 
 bool
+ms_client_list_alerts_complete(struct ms_client *client, enum ms_severity minimum,
+                                size_t limit, struct ms_alert_page *page, struct ms_error *error)
+{
+    struct ms_alert_page result = {0};
+    int64_t before_id = 0;
+
+    if (client == NULL || page == NULL || limit == 0 || limit > 200) {
+        set_error(error, "invalid_request", "alert limit must be between 1 and 200");
+        return false;
+    }
+    result.items = calloc(limit, sizeof *result.items);
+    if (result.items == NULL) {
+        set_error(error, "client_memory", "cannot allocate alert history");
+        return false;
+    }
+    while (result.length < limit) {
+        struct ms_alert_page batch = {0};
+        if (!ms_client_list_alerts(client, before_id, minimum, limit - result.length,
+                                   &batch, error)) {
+            ms_alert_page_clear(&batch);
+            ms_alert_page_clear(&result);
+            return false;
+        }
+        if (batch.length > limit - result.length ||
+            (before_id != 0 && batch.length > 0 && batch.next_before_id >= before_id)) {
+            set_error(error, "malformed_reply", "daemon returned invalid alert pagination");
+            ms_alert_page_clear(&batch);
+            ms_alert_page_clear(&result);
+            return false;
+        }
+        memcpy(result.items + result.length, batch.items,
+               batch.length * sizeof *batch.items);
+        result.length += batch.length;
+        before_id = batch.next_before_id;
+        bool finished = batch.length == 0 || before_id == 0;
+        ms_alert_page_clear(&batch);
+        if (finished)
+            break;
+    }
+    result.next_before_id = before_id;
+    ms_alert_page_clear(page);
+    *page = result;
+    return true;
+}
+
+bool
 ms_client_get_alert(struct ms_client *client, int64_t id,
                     struct ms_alert *alert, struct ms_error *error)
 {
