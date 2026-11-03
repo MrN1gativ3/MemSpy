@@ -2,7 +2,7 @@
 
 MemSpy is an open-source Linux security monitor for x86_64 systems. It uses eBPF to detect fileless execution and process-injection behavior, stores alerts locally for 30 days, and provides a CLI plus an optional GTK dashboard.
 
-MemSpy is a focused host monitor, not a full EDR or antivirus product. Test Response mode in a disposable VM before enabling it on a production server.
+MemSpy is a focused host monitor. Test Response mode in a disposable VM before enabling it.
 
 ## What it detects
 
